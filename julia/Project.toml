@@ -1,0 +1,9 @@
+name = "ComputationalAstrodynamics"
+uuid = "f609f3f2-ec25-4ed2-8689-e6f1e687f54d"
+authors = ["Astronomer"]
+version = "0.1.0"
+
+[deps]
+
+[compat]
+julia = "1.9, 1.10, 1.11"

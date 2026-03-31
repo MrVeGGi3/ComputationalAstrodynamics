@@ -1,0 +1,78 @@
+# ============================================================
+#  docker-compose.yml — ComputationalAstrodynamics
+#  IMPORTANTE: sempre execute a partir da raiz do projeto:
+#    cd ~/Documentos/ComputationalAstrodynamics
+#    docker compose -f docker/docker-compose.yml build
+# ============================================================
+
+services:
+
+  # ── Julia principal ───────────────────────────────────────
+  julia:
+    build:
+      # context é relativo ao diretório onde o comando é executado,
+      # NÃO ao diretório do docker-compose.yml.
+      # Sempre rode: docker compose -f docker/docker-compose.yml <cmd>
+      # a partir de ~/Documentos/ComputationalAstrodynamics
+      context: .
+      dockerfile: Dockerfile
+    image: astrodynamics-julia:latest
+    container_name: astro_julia
+    hostname: astro-julia
+    restart: unless-stopped
+
+    volumes:
+      - ./julia:/home/astro/project
+      - ./julia/data:/home/astro/project/data
+      - julia_depot:/home/astro/.julia
+      - ./claude:/home/astro/.claude:ro
+
+    environment:
+      JULIA_NUM_THREADS: "auto"
+      JULIA_PROJECT: "/home/astro/project"
+      JULIA_REVISE_INCLUDE: "1"
+      JULIA_NAIF_DATA: "/home/astro/project/data/spice"
+
+    ports:
+      - "1234:1234"
+      - "8888:8888"
+
+    stdin_open: true
+    tty: true
+
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+        reservations:
+          cpus: "1"
+          memory: 2G
+
+    healthcheck:
+      test: ["CMD", "julia", "--project=.", "-e", "println(\"ok\")"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Pluto server (notebooks interativos) ──────────────────
+  pluto:
+    image: astrodynamics-julia:latest
+    container_name: astro_pluto
+    depends_on:
+      julia:
+        condition: service_healthy
+    volumes:
+      - ./julia:/home/astro/project
+      - julia_depot:/home/astro/.julia
+    ports:
+      - "1235:1234"
+    command: >
+      julia --project=. -e
+      "using Pluto; Pluto.run(host=\"0.0.0.0\", port=1234, launch_browser=false)"
+    profiles:
+      - notebooks
+
+volumes:
+  julia_depot:
+    name: astrodynamics_julia_depot
