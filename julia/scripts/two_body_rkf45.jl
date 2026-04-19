@@ -17,6 +17,10 @@ Gera figuras de análise salvas em julia/data/output/:
   • fig3_conservacao.png — leis de conservação e passo adaptativo
   • fig4_posicoes.png    — posições individuais r₁ e r₂ em î,ĵ,k̂  (:two_body_inertial)
   • fig5_velocidades.png — velocidades individuais v₁ e v₂ em î,ĵ,k̂ (:two_body_inertial)
+  • fig6_inercial.png    — trajetória XY e componentes de p₁ e p₂ no referencial inercial
+  • fig7_relativo_p1.png — trajetória de p₂ e do baricentro G relativos a p₁
+  • fig8_relativo_baricentro.png — posições de p₁ e p₂ relativas ao baricentro G
+  • fig9_cm_comparacao.png — trajetórias de m₁, m₂ e CM no plano XY + componentes + distâncias ao CM
 
 Uso:
     julia julia/scripts/two_body_rkf45.jl
@@ -29,6 +33,7 @@ using StaticArrays
 using LinearAlgebra
 using Printf
 using Plots
+ENV["GKSwstype"] = "100"   # GR modo headless — evita crash no terminal (WezTerm/tmux)
 gr()
 
 # ── Constantes físicas ────────────────────────────────────────────────────────
@@ -481,6 +486,132 @@ function generate_plots(trajectory, h_sizes, s0, body, μ, t0, rtol, atol, ctx)
                      plot_titlefontsize=10)
         savefig(p_vel, joinpath(output_dir, "two_body_fig5_velocidades.png"))
 
+        # ── Figura 6 — Posições de p1 e p2 no referencial inercial ───────────
+        println("  Gerando fig6_inercial.png ...")
+
+        # Trajetória XY no plano inercial
+        p6_xy = plot(r1x, r1y; color=c1, lw=1.8, label="p₁", aspect_ratio=:equal,
+                     xlabel="X [km]", ylabel="Y [km]", title="Trajetória no plano XY (inercial)", kw2...)
+        plot!(p6_xy, r2x, r2y; color=c2, lw=1.8, linestyle=:dash, label="p₂")
+        scatter!(p6_xy, [r1x[1]], [r1y[1]]; ms=6, color=c1, markerstrokewidth=0, label="")
+        scatter!(p6_xy, [r2x[1]], [r2y[1]]; ms=6, color=c2, markerstrokewidth=0, label="")
+
+        # Componentes X vs tempo
+        p6_x = plot(t_min, r1x; color=c1, lw=1.8, label="p₁",
+                    ylabel="X [km]", title="Posição î", kw2...)
+        plot!(p6_x, t_min, r2x; color=c2, lw=1.8, linestyle=:dash, label="p₂")
+
+        # Componentes Y vs tempo
+        p6_y = plot(t_min, r1y; color=c1, lw=1.8, label="p₁",
+                    ylabel="Y [km]", title="Posição ĵ", kw2...)
+        plot!(p6_y, t_min, r2y; color=c2, lw=1.8, linestyle=:dash, label="p₂")
+
+        # Componentes Z vs tempo
+        p6_z = plot(t_min, r1z; color=c1, lw=1.8, label="p₁",
+                    xlabel="t [min]", ylabel="Z [km]", title="Posição k̂", kw2...)
+        plot!(p6_z, t_min, r2z; color=c2, lw=1.8, linestyle=:dash, label="p₂")
+
+        # Distância à origem
+        r1_mag = [norm(r1_traj[i])/1e3 for i in eachindex(trajectory)]
+        r2_mag = [norm(r2_traj[i])/1e3 for i in eachindex(trajectory)]
+        p6_mag = plot(t_min, r1_mag; color=c1, lw=1.8, label="|r₁|",
+                      xlabel="t [min]", ylabel="[km]", title="Distância à origem", kw2...)
+        plot!(p6_mag, t_min, r2_mag; color=c2, lw=1.8, linestyle=:dash, label="|r₂|")
+
+        p_iner = plot(p6_xy, p6_x, p6_y, p6_z, p6_mag,
+                      layout=@layout([a{0.5w} b; c d; e{0.35h}]),
+                      size=(1200, 900), dpi=150,
+                      plot_title="Posições de p₁ e p₂ — Referencial Inercial",
+                      plot_titlefontsize=11)
+        savefig(p_iner, joinpath(output_dir, "two_body_fig6_inercial.png"))
+
+        # ── Figura 7 — Trajetória de p2 e baricentro relativos a p1 ──────────
+        println("  Gerando fig7_relativo_p1.png ...")
+
+        # r₂ − r₁  e  r_cm − r₁  [km]
+        r2_rel_r1_x = r2x .- r1x;  r2_rel_r1_y = r2y .- r1y;  r2_rel_r1_z = r2z .- r1z
+        r_cm_vec    = [(ctx.r_cm0 + ctx.v_cm * (trajectory[i].t - t0)) / 1e3
+                       for i in eachindex(trajectory)]
+        rcm_x = [v[1] for v in r_cm_vec];  rcm_y = [v[2] for v in r_cm_vec]
+        rcm_z = [v[3] for v in r_cm_vec]
+        rcm_rel_r1_x = rcm_x .- r1x;  rcm_rel_r1_y = rcm_y .- r1y;  rcm_rel_r1_z = rcm_z .- r1z
+
+        c_cm = :darkgreen
+
+        p7_xy = plot(r2_rel_r1_x, r2_rel_r1_y; color=c2, lw=1.8, label="p₂ − p₁",
+                     aspect_ratio=:equal, xlabel="ΔX [km]", ylabel="ΔY [km]",
+                     title="Plano XY relativo a p₁", kw2...)
+        plot!(p7_xy, rcm_rel_r1_x, rcm_rel_r1_y; color=c_cm, lw=1.5,
+              linestyle=:dashdot, label="G − p₁")
+        scatter!(p7_xy, [r2_rel_r1_x[1]], [r2_rel_r1_y[1]]; ms=6, color=c2,
+                 markerstrokewidth=0, label="")
+
+        p7_x = plot(t_min, r2_rel_r1_x; color=c2, lw=1.8, label="p₂ − p₁",
+                    ylabel="ΔX [km]", title="Componente î", kw2...)
+        plot!(p7_x, t_min, rcm_rel_r1_x; color=c_cm, lw=1.5, linestyle=:dashdot, label="G − p₁")
+
+        p7_y = plot(t_min, r2_rel_r1_y; color=c2, lw=1.8, label="p₂ − p₁",
+                    ylabel="ΔY [km]", title="Componente ĵ", kw2...)
+        plot!(p7_y, t_min, rcm_rel_r1_y; color=c_cm, lw=1.5, linestyle=:dashdot, label="G − p₁")
+
+        p7_z = plot(t_min, r2_rel_r1_z; color=c2, lw=1.8, label="p₂ − p₁",
+                    xlabel="t [min]", ylabel="ΔZ [km]", title="Componente k̂", kw2...)
+        plot!(p7_z, t_min, rcm_rel_r1_z; color=c_cm, lw=1.5, linestyle=:dashdot, label="G − p₁")
+
+        p7_dist = plot(t_min, sep; color=c2, lw=1.8, legend=false,
+                       xlabel="t [min]", ylabel="|p₂ − p₁| [km]",
+                       title="Separação |p₂ − p₁|", titlefontsize=9)
+
+        p_rel1 = plot(p7_xy, p7_x, p7_y, p7_z, p7_dist,
+                      layout=@layout([a{0.5w} b; c d; e{0.35h}]),
+                      size=(1200, 900), dpi=150,
+                      plot_title="Trajetória de p₂ e Baricentro G Relativos a p₁",
+                      plot_titlefontsize=11)
+        savefig(p_rel1, joinpath(output_dir, "two_body_fig7_relativo_p1.png"))
+
+        # ── Figura 8 — p1 e p2 relativos ao baricentro G ─────────────────────
+        println("  Gerando fig8_relativo_baricentro.png ...")
+
+        # r₁ − r_cm  e  r₂ − r_cm  [km]
+        r1_rel_cm_x = r1x .- rcm_x;  r1_rel_cm_y = r1y .- rcm_y;  r1_rel_cm_z = r1z .- rcm_z
+        r2_rel_cm_x = r2x .- rcm_x;  r2_rel_cm_y = r2y .- rcm_y;  r2_rel_cm_z = r2z .- rcm_z
+
+        p8_xy = plot(r1_rel_cm_x, r1_rel_cm_y; color=c1, lw=1.8, label="p₁ − G",
+                     aspect_ratio=:equal, xlabel="ΔX [km]", ylabel="ΔY [km]",
+                     title="Plano XY relativo ao baricentro G", kw2...)
+        plot!(p8_xy, r2_rel_cm_x, r2_rel_cm_y; color=c2, lw=1.8, linestyle=:dash, label="p₂ − G")
+        scatter!(p8_xy, [0.0], [0.0]; ms=7, color=c_cm, markershape=:star5,
+                 markerstrokewidth=0, label="G")
+        scatter!(p8_xy, [r1_rel_cm_x[1]], [r1_rel_cm_y[1]]; ms=6, color=c1,
+                 markerstrokewidth=0, label="")
+        scatter!(p8_xy, [r2_rel_cm_x[1]], [r2_rel_cm_y[1]]; ms=6, color=c2,
+                 markerstrokewidth=0, label="")
+
+        p8_x = plot(t_min, r1_rel_cm_x; color=c1, lw=1.8, label="p₁ − G",
+                    ylabel="ΔX [km]", title="Componente î", kw2...)
+        plot!(p8_x, t_min, r2_rel_cm_x; color=c2, lw=1.8, linestyle=:dash, label="p₂ − G")
+
+        p8_y = plot(t_min, r1_rel_cm_y; color=c1, lw=1.8, label="p₁ − G",
+                    ylabel="ΔY [km]", title="Componente ĵ", kw2...)
+        plot!(p8_y, t_min, r2_rel_cm_y; color=c2, lw=1.8, linestyle=:dash, label="p₂ − G")
+
+        p8_z = plot(t_min, r1_rel_cm_z; color=c1, lw=1.8, label="p₁ − G",
+                    xlabel="t [min]", ylabel="ΔZ [km]", title="Componente k̂", kw2...)
+        plot!(p8_z, t_min, r2_rel_cm_z; color=c2, lw=1.8, linestyle=:dash, label="p₂ − G")
+
+        r1_cm_dist = [norm([r1_rel_cm_x[i], r1_rel_cm_y[i], r1_rel_cm_z[i]]) for i in eachindex(t_min)]
+        r2_cm_dist = [norm([r2_rel_cm_x[i], r2_rel_cm_y[i], r2_rel_cm_z[i]]) for i in eachindex(t_min)]
+        p8_dist = plot(t_min, r1_cm_dist; color=c1, lw=1.8, label="|p₁ − G|",
+                       xlabel="t [min]", ylabel="[km]", title="Distância ao baricentro", kw2...)
+        plot!(p8_dist, t_min, r2_cm_dist; color=c2, lw=1.8, linestyle=:dash, label="|p₂ − G|")
+
+        p_relcm = plot(p8_xy, p8_x, p8_y, p8_z, p8_dist,
+                       layout=@layout([a{0.5w} b; c d; e{0.35h}]),
+                       size=(1200, 900), dpi=150,
+                       plot_title="Posições de p₁ e p₂ Relativas ao Baricentro G",
+                       plot_titlefontsize=11)
+        savefig(p_relcm, joinpath(output_dir, "two_body_fig8_relativo_baricentro.png"))
+
         # ── Atualiza fig1 com trajetórias dos dois corpos ─────────────────────
         # (sobrescreve o fig1 gerado anteriormente com a versão inercial)
         println("  Atualizando fig1_orbita3d.png com ambos os corpos ...")
@@ -526,6 +657,52 @@ function generate_plots(trajectory, h_sizes, s0, body, μ, t0, rtol, atol, ctx)
                 lw=1.5, color=:gray, linestyle=:dot, label="CM")
 
         savefig(p1b, joinpath(output_dir, "two_body_fig1_orbita3d.png"))
+
+        # ── Figura 9 — Trajetórias de m₁, m₂ e Centro de Massa ───────────────
+        println("  Gerando fig9_cm_comparacao.png ...")
+
+        kw9 = (lw=1.8, legend=:outertopright, titlefontsize=9, guidefontsize=8)
+
+        # Plano XY: trajetórias de m₁, m₂ e CM
+        p9_xy = plot(r1x, r1y; color=c1, lw=2, label="m₁",
+                     aspect_ratio=:equal,
+                     xlabel="X [km]", ylabel="Y [km]",
+                     title="Trajetórias no Plano XY (inercial)",
+                     legend=:outertopright, titlefontsize=10)
+        plot!(p9_xy, r2x, r2y; color=c2, lw=2, linestyle=:dash, label="m₂")
+        plot!(p9_xy, rcm_x, rcm_y; color=c_cm, lw=1.5, linestyle=:dot, label="CM")
+        scatter!(p9_xy, [r1x[1]], [r1y[1]]; ms=6, color=c1,
+                 markerstrokewidth=0, label="")
+        scatter!(p9_xy, [r2x[1]], [r2y[1]]; ms=6, color=c2,
+                 markerstrokewidth=0, label="")
+        scatter!(p9_xy, [rcm_x[1]], [rcm_y[1]]; ms=7, color=c_cm,
+                 markershape=:star5, markerstrokewidth=0, label="CM t₀")
+
+        # Componente X(t): m₁, m₂ e CM
+        p9_x = plot(t_min, r1x; color=c1, ylabel="X [km]",
+                    title="Componente î", kw9...)
+        plot!(p9_x, t_min, r2x; color=c2, linestyle=:dash, label="m₂")
+        plot!(p9_x, t_min, rcm_x; color=c_cm, lw=1.5, linestyle=:dot, label="CM")
+
+        # Componente Y(t): m₁, m₂ e CM
+        p9_y = plot(t_min, r1y; color=c1, ylabel="Y [km]",
+                    title="Componente ĵ", kw9...)
+        plot!(p9_y, t_min, r2y; color=c2, linestyle=:dash, label="m₂")
+        plot!(p9_y, t_min, rcm_y; color=c_cm, lw=1.5, linestyle=:dot, label="CM")
+
+        # Distâncias de cada corpo ao CM
+        p9_dist = plot(t_min, r1_cm_dist; color=c1,
+                       xlabel="t [min]", ylabel="[km]",
+                       title="Distância ao Centro de Massa", kw9...)
+        plot!(p9_dist, t_min, r2_cm_dist; color=c2, linestyle=:dash, label="|m₂ − CM|")
+
+        p_cm_fig = plot(p9_xy, p9_x, p9_y, p9_dist,
+                        layout=@layout([a{0.5w} [b; c; d]]),
+                        size=(1200, 800), dpi=150,
+                        plot_title="Trajetórias de m₁ e m₂ com Centro de Massa — " *
+                                   "m₁=$(round(ctx.m1, sigdigits=4)) kg | m₂=$(round(ctx.m2, sigdigits=4)) kg",
+                        plot_titlefontsize=10)
+        savefig(p_cm_fig, joinpath(output_dir, "two_body_fig9_cm_comparacao.png"))
     end
 
     println()
@@ -544,56 +721,38 @@ function main()
     # ╚══════════════════════════════════════════════════════════════════════╝
 
     # Modo de entrada:  :cartesian  |  :keplerian  |  :two_body_inertial
-    input_mode = :cartesian
+    input_mode = :two_body_inertial
 
     # ── Corpos do sistema ─────────────────────────────────────────────────
     corpo_central = :terra          # chave do catálogo BODIES (define R₁ e nome)
     m1_override   = 1.0e26         # Float64 para sobrescrever a massa do catálogo
-    m2            = 1.0e26        # massa do corpo 2 [kg]  (ex: Lua ≈ 7.342e22)
+    m2            = m1_override * 0.0001       # massa do corpo 2 [kg]  (ex: Lua ≈ 7.342e22)
 
     # Nome e raio físico do corpo 2 (exibição nos gráficos)
     name2 = "Lua"        # string — aparece nas legendas
     R2    = 1.7374e6     # raio físico do corpo 2 [m]
 
     # ── Intervalo de tempo ────────────────────────────────────────────────
-    t0 = 0.0            # tempo inicial [s]
-    tf = 450.0 # tempo final   [s]  (~1 período orbital da Lua ≈ 27,3 dias)
+    t0 = 0.0     # tempo inicial [s]
+    tf = 480.0   # tempo final   [s]
 
     # ── Entrada CARTESIANA ────────────────────────────────────────────────
     # Posição r₀ e velocidade v₀ do corpo 2 no ECI [m] e [m/s]
     # (corpo 1 fixo na origem; usado quando input_mode = :cartesian)
-    r0_i =  0.0;  r0_j =  0.0;  r0_k = 0.0;
-    v0_i = 10.0;  v0_j = 20.0;  v0_k = 30.0;
+    r0_i =  6.778137e6;  r0_j =  0.0;  r0_k = 0.0
+    v0_i =  0.0;         v0_j =  7784.0;  v0_k = 0.0
 
     # ── Entrada KEPLERIANA ────────────────────────────────────────────────
     a_km = 6778.137;  ecc = 0.001;  inc  = 51.6
     raan = 30.0;      aop = 60.0;   ta   = 0.0
 
     # ── Entrada DOIS CORPOS INERCIAL ──────────────────────────────────────
-    # Posição e velocidade do CORPO 1 no referencial inercial
-    #   (î = X,  ĵ = Y,  k̂ = Z)
-    #
-    # Exemplo: Terra–Lua em órbita circular com CM em repouso na origem
-    #   m₁ = Terra,  m₂ = Lua,  d = 3.844e8 m,  v_rel ≈ 1023 m/s
-    let M_tot = (isnothing(m1_override) ? BODIES[corpo_central].m : m1_override) + m2
-        d     = 3.844e8          # separação inicial [m]
-        v_rel = sqrt(G * M_tot / d)  # velocidade relativa circular
-        α₁    = m2 / M_tot       # fração de r que pertence ao corpo 1
-        α₂    = 1.0 - α₁         # fração que pertence ao corpo 2
-
-        # Corpo 1 deslocado do CM pela fração α₁ (CM na origem)
-        global r1_i = -α₁ * d;  global r1_j = 0.0;  global r1_k = 0.0
-        global v1_i =  0.0;     global v1_j = -α₁ * v_rel;  global v1_k = 0.0
-
-        # Corpo 2 deslocado do CM pela fração α₂
-        global r2_i =  α₂ * d;  global r2_j = 0.0;  global r2_k = 0.0
-        global v2_i =  0.0;     global v2_j =  α₂ * v_rel;  global v2_k = 0.0
-    end
-    # Para configuração manual, comente o bloco `let` acima e defina:
-    # r1_i, r1_j, r1_k  — posição do corpo 1 [m]
-    # v1_i, v1_j, v1_k  — velocidade do corpo 1 [m/s]
-    # r2_i, r2_j, r2_k  — posição do corpo 2 [m]
-    # v2_i, v2_j, v2_k  — velocidade do corpo 2 [m/s]
+    # Posição [m] e velocidade [m/s] de cada corpo no referencial inercial
+    #   î = X,  ĵ = Y,  k̂ = Z
+    r1_i =     0.0;  r1_j =     0.0;  r1_k =     0.0  # posição corpo 1 [m]
+    r2_i = 3.0e6;   r2_j =     0.0;  r2_k =     0.0  # posição corpo 2 [m]  — Curtis Ex 2.2: 3000 km
+    v1_i = 10.0e3;  v1_j =  20.0e3;  v1_k =  30.0e3  # velocidade corpo 1 [m/s] — Curtis Ex 2.2: 10î+20ĵ+30k̂ km/s
+    v2_i =  0.0;    v2_j =  40.0e3;  v2_k =     0.0  # velocidade corpo 2 [m/s] — Curtis Ex 2.2: 40ĵ km/s
 
     # ── Parâmetros do integrador ──────────────────────────────────────────
     rtol = 1e-10

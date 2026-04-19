@@ -82,13 +82,30 @@ export OrbitalState, KeplerianElements
 export μ_EARTH, R_EARTH, J2, J3, ω_EARTH, c_LIGHT, AU
 
 # Propagadores
-export keplerian_to_cartesian, cartesian_to_keplerian
+export keplerian_to_cartesian, cartesian_to_keplerian, true_anomaly_from_geometry
+export eccentric_anomaly_from_true
+export true_to_mean_anomaly, mean_to_eccentric_anomaly, mean_motion
+export specific_angular_momentum, specific_orbital_energy
+export eccentricity_from_energy, perigee_radius
+export true_anomaly_from_momentum, hyperbolic_anomaly_from_true
+export cartesian_to_canonical, canonical_to_cartesian, sge_to_canonical
 export propagate_kepler, propagate_j2, propagate_rk4, propagate_rkf45
+export propagate_universal, propagate_parabolic
+export stumpff_C, stumpff_S
+export solve_universal_kepler, universal_kepler, lagrange_coefficients
+export barker_equation, solve_barker, cardano_parabolic
+
+# Rotações elementares
+export rot1, rot2, rot3
 
 # Transformações de referencial
 export eci_to_ecef, ecef_to_eci
 export ecef_to_lla, lla_to_ecef
 export eci_to_lvlh, lvlh_to_eci
+export eci_to_perifocal, perifocal_to_eci
+export ecef_to_enu_matrix, ecef_to_enu, enu_to_ecef
+export enu_to_aer, aer_to_enu, eci_to_aer
+export cartesian_to_spherical, spherical_to_cartesian
 
 # Utilitários
 export print_orbit_summary
