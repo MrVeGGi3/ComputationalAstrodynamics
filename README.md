@@ -21,19 +21,34 @@ bash setup.sh
 
 ```
 .
-├── setup.sh                     ← execute primeiro
-├── .wezterm/wezterm.lua         ← config do terminal (4 painéis)
+├── setup.sh                          ← execute primeiro
+├── .wezterm/wezterm.lua              ← config do terminal (4 painéis)
 ├── docker/
-│   ├── Dockerfile               ← Julia 1.10 + deps científicas
-│   └── docker-compose.yml       ← serviços: julia, pluto
+│   ├── Dockerfile                    ← Julia 1.10 + deps científicas
+│   └── docker-compose.yml            ← serviços: julia, pluto
 ├── julia/
-│   ├── Project.toml             ← dependências
-│   ├── src/                     ← módulo principal + propagadores
-│   ├── scripts/                 ← exemplos de simulação
-│   ├── notebooks/               ← Pluto.jl notebooks
-│   └── data/                    ← TLEs, efemérides, outputs
+│   ├── Project.toml                  ← dependências
+│   ├── src/
+│   │   ├── ComputationalAstrodynamics.jl  ← módulo principal
+│   │   ├── propagators.jl            ← RKF4(5), J2, propagadores
+│   │   ├── transforms.jl             ← conversões cartesiano ↔ Keplerian
+│   │   └── utils.jl                  ← constantes e utilitários
+│   ├── scripts/
+│   │   ├── main.jl                   ← ponto de entrada geral
+│   │   ├── two_body_rkf45.jl         ← problema de dois corpos (RKF4(5))
+│   │   ├── two_body_integrals_motion.jl  ← integrais de movimento
+│   │   ├── parte4_analise_v0.jl      ← análise de velocidade inicial
+│   │   ├── parte4_sensibilidade.jl   ← sensibilidade a condições iniciais
+│   │   └── orbital_elements/
+│   │       ├── circulo.jl            ← cônica: órbita circular
+│   │       ├── elipse.jl             ← cônica: órbita elíptica
+│   │       ├── parabola.jl           ← cônica: trajetória parabólica
+│   │       ├── hiperbole.jl          ← cônica: trajetória hiperbólica
+│   │       └── comuns.jl             ← funções compartilhadas
+│   ├── notebooks/                    ← Pluto.jl notebooks
+│   └── data/                         ← TLEs, efemérides, outputs
 └── claude/
-    └── CLAUDE.md                ← contexto do projeto para Claude Code
+    └── CLAUDE.md                     ← contexto do projeto para Claude Code
 ```
 
 ---
@@ -54,6 +69,70 @@ cd ~/Documentos/ComputationalAstrodynamics && claude
 docker compose -f docker/docker-compose.yml --profile notebooks up pluto
 # → http://localhost:1235
 ```
+
+---
+
+## Scripts de Simulação
+
+### Problema de Dois Corpos — RKF4(5)
+
+```bash
+julia julia/scripts/two_body_rkf45.jl
+```
+
+Suporta três modos de entrada:
+- `:cartesian` — vetores r₀ e v₀ no referencial ECI
+- `:keplerian` — elementos orbitais clássicos (a, e, i, Ω, ω, ν)
+- `:two_body_inertial` — posição e velocidade completas de ambos os corpos
+
+Gera figuras em `julia/data/output/`:
+
+| Figura | Conteúdo |
+|---|---|
+| `fig1_orbita3d.png` | Trajetória orbital 3D |
+| `fig2_cinematica.png` | Componentes cartesianas r(t) e v(t) |
+| `fig3_conservacao.png` | Leis de conservação e passo adaptativo |
+| `fig4_posicoes.png` | Posições individuais r₁ e r₂ (modo inercial) |
+| `fig5_velocidades.png` | Velocidades individuais v₁ e v₂ (modo inercial) |
+| `fig6_inercial.png` | Trajetória XY e momentos lineares no inercial |
+| `fig7_relativo_p1.png` | Trajetória de p₂ e baricentro relativos a p₁ |
+| `fig8_relativo_baricentro.png` | p₁ e p₂ relativos ao baricentro G |
+| `fig9_cm_comparacao.png` | Trajetórias de m₁, m₂ e CM no plano XY |
+
+### Integrais de Movimento
+
+```bash
+julia julia/scripts/two_body_integrals_motion.jl
+```
+
+Monitora a conservação numérica ao longo da propagação RKF4(5):
+- **ε(t)** — energia específica orbital
+- **h⃗(t)** — vetor momento angular específico
+- **B⃗(t)** — vetor de Laplace-Runge-Lenz
+
+Erros reportados nas normas l∞ e l₂.
+
+### Elementos Orbitais por Tipo de Cônica
+
+```bash
+julia julia/scripts/orbital_elements/elipse.jl
+julia julia/scripts/orbital_elements/hiperbole.jl
+julia julia/scripts/orbital_elements/parabola.jl
+julia julia/scripts/orbital_elements/circulo.jl
+```
+
+Cada script calcula e exibe os parâmetros orbitais clássicos para o tipo de cônica
+correspondente: vis-viva, semi-latus rectum, anomalia verdadeira, ângulo de trajetória,
+período, momento angular e excentricidade.
+
+### Sensibilidade a Condições Iniciais
+
+```bash
+julia julia/scripts/parte4_sensibilidade.jl
+```
+
+Analisa como pequenas variações δv₀ alteram o tipo de trajetória ao redor dos casos
+parabólico (separatriz) e hiperbólico. Demonstra a divergência do período T ∝ |δv₀|⁻³/².
 
 ---
 
@@ -121,7 +200,7 @@ O projeto segue convenções rígidas para garantir eficiência numérica:
 
 - **`SVector{3,Float64}`** e **`SMatrix{3,3,Float64}`** em todo código de inner loop — sem alocações no GC
 - **`Float64` exclusivo** — `Float32` não tem precisão suficiente para propagação orbital
-- Integrador **RK4 fixo** para prototipagem; **`Vern9`** (step adaptativo, `reltol=1e-12`) para alta fidelidade
+- Integrador **RKF4(5) próprio** para prototipagem e análise de passo adaptativo; **`Vern9`** (`reltol=1e-12`) para alta fidelidade
 - **`Threads.@threads`** para propagação paralela de constelações (`JULIA_NUM_THREADS=auto` já configurado)
 - Consulte `claude/CLAUDE.md` para as diretrizes completas de performance
 
