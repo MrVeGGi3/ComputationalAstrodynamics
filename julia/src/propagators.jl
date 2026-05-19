@@ -371,8 +371,9 @@ function propagate_j2(s0::OrbitalState, Δt::Float64;
                       μ::Float64=μ_EARTH, nsteps::Int=1000)
     dt    = Δt / nsteps
     state = s0
+    # usa accel_j_harmonics com apenas J2 (J3=J4=J6=0)
     @inbounds for _ in 1:nsteps
-        state = _rk4_step(state, dt, _accel_j2; μ)
+        state = _rk4_step(state, dt, accel_j_harmonics; μ, j3=0.0, j4=0.0, j6=0.0)
     end
     return OrbitalState(state.r, state.v, s0.t + Δt)
 end
@@ -478,18 +479,6 @@ function _rkf45_error_norm(err_r, err_v, r_old, v_old, r_new, v_new,
         n   += (err_r[i]/sc_r)^2 + (err_v[i]/sc_v)^2
     end
     return sqrt(n / 6)
-end
-
-function _accel_j2(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float64;
-                   μ::Float64=μ_EARTH)
-    rnorm = norm(r)
-    fac   = -μ / rnorm^3
-    j2fac = 1.5 * J2 * μ * R_EARTH^2 / rnorm^5
-    z2r2  = (r[3] / rnorm)^2
-    ax = fac * r[1] + j2fac * r[1] * (1.0 - 5.0 * z2r2)
-    ay = fac * r[2] + j2fac * r[2] * (1.0 - 5.0 * z2r2)
-    az = fac * r[3] + j2fac * r[3] * (3.0 - 5.0 * z2r2)
-    return SVector(ax, ay, az)
 end
 
 function _rk4_step(s::OrbitalState, dt::Float64, accel_fn; kwargs...)

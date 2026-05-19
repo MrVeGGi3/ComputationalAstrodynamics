@@ -18,6 +18,18 @@ const J2 = 1.08262668e-3
 """Coeficiente zonal J3"""
 const J3 = -2.53265648e-6
 
+"""Coeficiente zonal J4"""
+const J4 = -1.08262545e-6
+
+"""Coeficiente zonal J6"""
+const J6 = -5.40681239e-7
+
+"""Parâmetro gravitacional da Lua [m³/s²]"""
+const μ_MOON = 4.902800066e12
+
+"""Parâmetro gravitacional do Sol [m³/s²]"""
+const μ_SUN = 1.327124400e20
+
 """Velocidade angular terrestre [rad/s]"""
 const ω_EARTH = 7.2921150e-5
 
@@ -70,6 +82,8 @@ end
 # ── Sub-módulos ───────────────────────────────────────────────
 
 include("propagators.jl")
+include("perturbations.jl")
+include("three_body.jl")
 include("transforms.jl")
 include("utils.jl")
 
@@ -79,7 +93,8 @@ include("utils.jl")
 export OrbitalState, KeplerianElements
 
 # Constantes
-export μ_EARTH, R_EARTH, J2, J3, ω_EARTH, c_LIGHT, AU
+export μ_EARTH, R_EARTH, J2, J3, J4, J6, ω_EARTH, c_LIGHT, AU
+export μ_MOON, μ_SUN
 
 # Propagadores
 export keplerian_to_cartesian, cartesian_to_keplerian, true_anomaly_from_geometry
@@ -106,6 +121,17 @@ export eci_to_perifocal, perifocal_to_eci
 export ecef_to_enu_matrix, ecef_to_enu, enu_to_ecef
 export enu_to_aer, aer_to_enu, eci_to_aer
 export cartesian_to_spherical, spherical_to_cartesian
+
+# Perturbações
+export accel_j_harmonics, accel_drag, accel_srp, accel_third_body
+export build_perturbed_accel
+export sun_position_approx, moon_position_approx
+
+# Três corpos (CR3BP)
+export CR3BPSystem, EARTH_MOON, SUN_EARTH
+export cr3bp_eom, jacobi_constant, omega_star
+export lagrange_points, zero_velocity_surface
+export propagate_cr3bp, stability_lagrange
 
 # Utilitários
 export print_orbit_summary

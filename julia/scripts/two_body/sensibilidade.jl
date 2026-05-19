@@ -29,7 +29,7 @@ Uso:
 """
 
 import Pkg
-Pkg.activate(joinpath(@__DIR__, ".."); io=devnull)
+Pkg.activate(joinpath(@__DIR__, "../.."); io=devnull)
 
 using StaticArrays
 using LinearAlgebra
