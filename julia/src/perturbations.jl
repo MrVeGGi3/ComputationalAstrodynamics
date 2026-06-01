@@ -34,27 +34,28 @@ function accel_j_harmonics(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float6
     Rr2     = (R_body / rnorm)^2
 
     # J2 — oblateidade terrestre
-    fac_j2  = 1.5 * j2 * μ * R_body^2 / r5
+    # Sinal negativo: a_Jn = ∇U_Jn com U = (μ/r)[1 − ΣJn(R/r)ⁿPn(sinφ)]
+    fac_j2  = -1.5 * j2 * μ * R_body^2 / r5
     z2r2    = z2 / r2
     a_j2    = SVector(fac_j2 * x * (1.0 - 5.0*z2r2),
                       fac_j2 * y * (1.0 - 5.0*z2r2),
                       fac_j2 * z * (3.0 - 5.0*z2r2))
 
     # J3 — assimetria norte-sul
-    fac_j3  = 2.5 * j3 * μ * R_body^3 / (r5 * rnorm)
+    fac_j3  = -2.5 * j3 * μ * R_body^3 / (r5 * rnorm)
     a_j3    = SVector(fac_j3 * x * (3.0*z - 7.0*z2r2*rnorm) / rnorm,
                       fac_j3 * y * (3.0*z - 7.0*z2r2*rnorm) / rnorm,
                       fac_j3 * (6.0*z2 - 7.0*z2*z2/r2 - 3.0*r2/5.0) / rnorm)
 
     # J4 — achatamento de 4ª ordem
-    fac_j4  = -(5.0/8.0) * j4 * μ * R_body^4 / (r5 * r2)
+    fac_j4  = (5.0/8.0) * j4 * μ * R_body^4 / (r5 * r2)
     z2r2_2  = z2r2^2
     a_j4    = SVector(fac_j4 * x * (3.0 - 42.0*z2r2 + 63.0*z2r2_2),
                       fac_j4 * y * (3.0 - 42.0*z2r2 + 63.0*z2r2_2),
                       fac_j4 * z * (15.0 - 70.0*z2r2 + 63.0*z2r2_2))
 
     # J6 — harmônica zonal de 6ª ordem
-    fac_j6  = -(j6 * μ * R_body^6) / (16.0 * r5 * r2 * r2)
+    fac_j6  = (j6 * μ * R_body^6) / (16.0 * r5 * r2 * r2)
     z2r2_3  = z2r2^3
     a_j6    = SVector(fac_j6 * x * (-35.0 + 945.0*z2r2 - 3465.0*z2r2_2 + 3003.0*z2r2_3),
                       fac_j6 * y * (-35.0 + 945.0*z2r2 - 3465.0*z2r2_2 + 3003.0*z2r2_3),
