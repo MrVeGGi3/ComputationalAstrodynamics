@@ -53,6 +53,7 @@ bash setup.sh
     │   │   ├── drag.jl               ← decaimento LEO por arrasto atmosférico
     │   │   ├── srp.jl                ← pressão de radiação solar em MEO/GEO
     │   │   ├── third_body.jl         ← perturbação lunar (GEO) e solar (GPS)
+    │   │   ├── cowell_geopotential.jl ← Cowell J2+J3+J4 (Vern7 / Yoshida6)
     │   │   └── combined.jl           ← LEO e GEO com perturbações combinadas
     │   └── three_body/
     │       └── cr3bp.jl              ← CR3BP: Lagrange, ZVC, trajetória, Jacobi
@@ -120,6 +121,30 @@ docker compose -f docker/docker-compose.yml --profile notebooks up pluto
 
 Sistemas predefinidos: `EARTH_MOON` (μ₃ ≈ 0.01215) e `SUN_EARTH` (μ₃ ≈ 3e-6).
 
+### `transforms.jl` — Referenciais e Notações de Posição
+
+Conversões entre os referenciais e notações de posição. Época de referência:
+J2000.0 (t = 0 em segundos desde 2000-01-01 12:00:00 TT).
+
+| Referencial / Notação | Funções | Observações |
+|---|---|---|
+| **ECI ↔ ECEF** | `eci_to_ecef`, `ecef_to_eci` | inclui Coriolis na velocidade; usa `gmst` (IAU-1982) |
+| **ECEF ↔ LLA** (geodético) | `ecef_to_lla`, `lla_to_ecef` | WGS-84, método iterativo de Bowring |
+| **ECI ↔ LVLH** (RSW/Hill) | `eci_to_lvlh`, `lvlh_to_eci` | eixos x̂=radial, ŷ=along-track, ẑ=cross-track |
+| **ECI ↔ Perifocal** (PQW) | `eci_to_perifocal`, `perifocal_to_eci` | P̂=pericentro, Q̂, Ŵ=ĥ/\|ĥ\| |
+| **ECEF ↔ ENU** (topocêntrico) | `ecef_to_enu`, `enu_to_ecef`, `ecef_to_enu_matrix` | East-North-Up relativo a estação |
+| **ENU/ECI → AER** | `enu_to_aer`, `aer_to_enu`, `eci_to_aer` | Azimute (do N, horário), Elevação, Alcance |
+| **Cartesiano ↔ esféricas** | `cartesian_to_spherical`, `spherical_to_cartesian` | latitude *geocêntrica* |
+| **Cartesiano ↔ Keplerianos** | `cartesian_to_keplerian`, `keplerian_to_cartesian` | (em `propagators.jl`) elementos clássicos a,e,i,Ω,ω,ν |
+| **Cartesiano ↔ Canônicas** | `cartesian_to_canonical`, `sge_to_canonical`, `canonical_to_cartesian` | unidades DU/TU/VU + vetor nodal N⃗ |
+| **Rotações elementares** | `rot1`, `rot2`, `rot3` | matrizes de rotação passiva em torno de X, Y, Z |
+| **GMST** | `gmst` | Tempo Sideral Médio de Greenwich [rad] |
+
+Conversões de anomalia (em `propagators.jl`): `true_to_mean_anomaly`,
+`mean_to_eccentric_anomaly`, `eccentric_anomaly_from_true`,
+`hyperbolic_anomaly_from_true`, `true_anomaly_from_geometry`,
+`true_anomaly_from_momentum`.
+
 ---
 
 ## Scripts de Simulação
@@ -165,9 +190,26 @@ julia julia/scripts/perturbations/srp.jl
 # Perturbação da Lua (GEO) e do Sol (GPS/MEO)
 julia julia/scripts/perturbations/third_body.jl
 
+# Cowell J2+J3+J4: Vern7 (adaptativo) vs Yoshida6 (simplético)
+julia julia/scripts/perturbations/cowell_geopotential.jl
+
 # Combinações realistas: LEO (J2+J3+J4+arrasto), GEO (J2+SRP+Lua)
 julia julia/scripts/perturbations/combined.jl
 ```
+
+O script `cowell_geopotential.jl` propaga uma órbita LEO pela formulação de
+Cowell (integração direta de r̈ = a_2corpos + a_geopotencial) e compara dois
+integradores via `DifferentialEquations.jl`:
+
+- **Vern7** — Runge-Kutta de Verner 7ª ordem, passo adaptativo (não-simplético)
+- **Yoshida6** — composição simplética 6ª ordem de Yoshida (1990), passo fixo
+
+Flags no topo do arquivo: `USE_SYMPLECTIC` (escolhe o integrador) e
+`APPLY_PERTURBATIONS` (`false` ⇒ Dois Corpos puro/Kepler). O diagnóstico de
+energia usa a energia total corrigida pelo potencial zonal
+(ε_tot = v²/2 − μ/r + V_J2 + V_J3 + V_J4), invariante exata do modelo
+conservativo, evidenciando a deriva secular do Vern7 frente à oscilação
+limitada do Yoshida6.
 
 ### CR3BP — Problema de Três Corpos
 
@@ -249,6 +291,29 @@ times, states, C_hist = propagate_cr3bp(u0, 3*2π, sys)
 - Integrador **RKF4(5) próprio** com controle WRMS para prototipagem e análise de passo adaptativo
 - **`Vern9`** (`reltol=1e-12`) recomendado via `DifferentialEquations.jl` para alta fidelidade
 - **`Threads.@threads`** para propagação paralela de constelações (`JULIA_NUM_THREADS=auto` já configurado)
+
+---
+
+## Roadmap — O que pode ser implementado
+
+Modelos e notações ainda não cobertos, agrupados por área.
+
+### Modelos de órbita
+- **SGP4/SDP4** — propagador analítico médio que fecha o ciclo com o parser TLE já existente
+- **Encke** — propagação por desvio de uma órbita osculadora de referência (complemento ao Cowell)
+- **VOP / Equações planetárias de Gauss e Lagrange** — propagação em elementos em vez de cartesiano
+- **Geopotencial completo** — harmônicas tesserais/setoriais (C_nm, S_nm, EGM2008), além das zonais atuais
+- **Lambert solver** e determinação de órbita (Gauss, Gibbs, Herrick-Gibbs)
+- **Integradores adicionais** — Gauss-Jackson, Adams-Bashforth-Moulton (multistep), DOP853
+- **Atmosfera de alta fidelidade** — NRLMSISE-00 / Jacchia; efeitos relativísticos (Schwarzschild)
+- **Três corpos avançado** — BCR4BP, ER3BP, órbitas periódicas (halo/Lyapunov), variedades invariantes, STM + differential correction
+
+### Notações / referenciais de posição
+- **Elementos equinociais** — não-singulares para e≈0 ou i≈0 (removem a degeneração dos keplerianos clássicos)
+- **Delaunay / Poincaré** — variáveis canônicas para teoria de perturbação
+- **TEME** (requerido pelo SGP4) e **precessão-nutação IAU-2000/2006** (GMST atual é só IAU-1982)
+- **NED** e **SEZ** — complementos do ENU já implementado
+- **RA/Dec** — ascensão reta / declinação topocêntrica e geocêntrica
 
 ---
 
