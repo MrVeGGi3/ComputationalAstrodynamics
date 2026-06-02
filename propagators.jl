@@ -176,11 +176,15 @@ function rotation_matrix_pqw_to_eci(Ω, ω, i)
     cΩ, sΩ = cos(Ω), sin(Ω)
     cω, sω = cos(ω), sin(ω)
     ci, si = cos(i), sin(i)
-    SMatrix{3,3}(
-        cΩ*cω - sΩ*sω*ci,  -cΩ*sω - sΩ*cω*ci,  sΩ*si,
-        sΩ*cω + cΩ*sω*ci,  -sΩ*sω + cΩ*cω*ci, -cΩ*si,
-        sω*si,               cω*si,              ci
-    )
+    # Matriz de rotação 313 (PQW → ECI), escrita por LINHAS.
+    # Usar o literal `@SMatrix [...]` (row-major) e NÃO `SMatrix{3,3}(...)`,
+    # cujo construtor posicional é column-major e montaria a transposta —
+    # isso inverte o sinal de v_z e corrompe Ω no round-trip cartesian↔keplerian.
+    @SMatrix [
+        cΩ*cω - sΩ*sω*ci   -cΩ*sω - sΩ*cω*ci   sΩ*si
+        sΩ*cω + cΩ*sω*ci   -sΩ*sω + cΩ*cω*ci  -cΩ*si
+        sω*si               cω*si              ci
+    ]
 end
 
 function true_to_mean_anomaly(ν, e)
