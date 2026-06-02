@@ -91,8 +91,8 @@ function cartesian_to_keplerian(s::OrbitalState; μ=μ_EARTH)
     a     = -μ / (2ξ)
     i     = acos(clamp(h_vec[3]/h, -1, 1))
     Ω     = atan(n_vec[2], n_vec[1])
-    ω     = (dot(n_vec, e_vec) < 0 ? 2π - 1 : 1) * acos(clamp(dot(n_vec, e_vec)/(n*e), -1, 1))
-    ν     = (dot(e_vec, v_vec) < 0 ? 2π - 1 : 1) * acos(clamp(dot(e_vec, r_vec)/(e*r), -1, 1))
+    ω     = let raw = acos(clamp(dot(n_vec, e_vec)/(n*e), -1, 1)); e_vec[3] < 0 ? 2π - raw : raw end
+    ν     = let raw = acos(clamp(dot(e_vec, r_vec)/(e*r), -1, 1)); dot(r_vec, v_vec) < 0 ? 2π - raw : raw end
 
     return KeplerianElements(a, e, i, Ω, ω, ν)
 end
