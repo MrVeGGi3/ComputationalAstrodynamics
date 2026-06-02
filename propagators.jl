@@ -152,7 +152,9 @@ end
 function acceleration_j2(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float64; μ=μ_EARTH)
     rnorm = norm(r)
     fac   = -μ / rnorm^3
-    j2fac = 1.5 * J2 * μ * R_EARTH^2 / rnorm^5
+    # Aceleração perturbadora J2 (Curtis/Vallado): coeficiente NEGATIVO.
+    # O sinal positivo produzia progressão nodal em vez de regressão (i<90°).
+    j2fac = -1.5 * J2 * μ * R_EARTH^2 / rnorm^5
     z2r2  = (r[3]/rnorm)^2
     ax = fac*r[1] + j2fac * r[1] * (1 - 5*z2r2)
     ay = fac*r[2] + j2fac * r[2] * (1 - 5*z2r2)
