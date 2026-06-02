@@ -31,22 +31,36 @@ gr()
 
 # ─── Configuração ───────────────────────────────────────────────────────────
 
-const USE_SYMPLECTIC = false   # false → Vern7 | true → Yoshida6
+const USE_SYMPLECTIC = false #false → Vern7 | true → Yoshida6
+
+# Liga/desliga as perturbações do geopotencial:
+#   true  → modelo perturbado (J2+J3+J4) — como hoje
+#   false → harmônicos zerados ⇒ Problema de Dois Corpos puro (Kepler)
+const APPLY_PERTURBATIONS = true
+
+# Harmônicos efetivamente aplicados na dinâmica (zerados no modo Dois Corpos).
+# A correção de energia abaixo usa o MESMO j2_active, garantindo que ela vire
+# automaticamente zero quando APPLY_PERTURBATIONS = false (energia Kepleriana exata).
+const j2_active = APPLY_PERTURBATIONS ? J2 : 0.0
+const j3_active = APPLY_PERTURBATIONS ? J3 : 0.0
+const j4_active = APPLY_PERTURBATIONS ? J4 : 0.0
+
+const model_label = APPLY_PERTURBATIONS ? "J2+J3+J4" : "Dois Corpos"
 
 # ─── Condições iniciais ─────────────────────────────────────────────────────
 
 el0 = KeplerianElements(
-    6_800_000.0,          # a [m]   — LEO ~430 km de altitude
-    0.001,                # e
-    deg2rad(28.0),        # i       — inclinação lançamento de Canaveral
-    deg2rad(0.0),         # Ω
-    deg2rad(0.0),         # ω
-    deg2rad(0.0),         # ν
+    8_059_000.0,          # a [m]   
+    0.17136,                # e
+    deg2rad(28.0),        # i       
+    deg2rad(45.0),         # Ω
+    deg2rad(30.0),         # ω
+    deg2rad(40.0),         # ν
 )
 s0 = keplerian_to_cartesian(el0)
 
 T_orb    = 2π * sqrt(el0.a^3 / μ_EARTH)   # período orbital [s]
-n_orbs   = 100                              # número de órbitas propagadas
+n_orbs   = 1000                          # número de órbitas
 Δt_total = n_orbs * T_orb
 n_pts    = 1000                             # pontos de amostragem
 
@@ -56,8 +70,8 @@ t_sample = range(s0.t, s0.t + Δt_total; length=n_pts + 1)
 p      = el0.a * (1 - el0.e^2)
 n_mot  = mean_motion(el0.a)
 Rp2    = (R_EARTH / p)^2
-dΩ_dt  = -(3/2) * n_mot * J2 * Rp2 * cos(el0.i)    # rad/s
-dω_dt  =  (3/4) * n_mot * J2 * Rp2 * (5cos(el0.i)^2 - 1)
+dΩ_dt  = -(3/2) * n_mot * j2_active * Rp2 * cos(el0.i)    # rad/s
+dω_dt  =  (3/4) * n_mot * j2_active * Rp2 * (5cos(el0.i)^2 - 1)
 
 @printf("\n═══ Parâmetros da Órbita ════════════════════════════════════\n")
 @printf("  a    = %.1f km    e = %.4f    i = %.1f°\n",
@@ -68,11 +82,35 @@ dω_dt  =  (3/4) * n_mot * J2 * Rp2 * (5cos(el0.i)^2 - 1)
 @printf("  dΩ/dt = %+.4f °/dia\n", rad2deg(dΩ_dt)*86400)
 @printf("  dω/dt = %+.4f °/dia\n", rad2deg(dω_dt)*86400)
 @printf("  Integrador: %s\n", USE_SYMPLECTIC ? "Yoshida6 (simplético)" : "Vern7 (não-simplético)")
+@printf("  Modelo    : %s\n", APPLY_PERTURBATIONS ? "Perturbado (J2+J3+J4)" : "Dois Corpos puro (Kepler)")
 @printf("═════════════════════════════════════════════════════════════\n\n")
 
 # ─── Aceleração geopotencial J2+J3+J4 ──────────────────────────────────────
 
-geopotencial = build_perturbed_accel(harmonics=(j2=J2, j3=J3, j4=J4, j6=0.0))
+geopotencial = build_perturbed_accel(harmonics=(j2=j2_active, j3=j3_active, j4=j4_active, j6=0.0))
+
+# ─── Energia específica corrigida pelo potencial geopotencial ───────────────
+# specific_orbital_energy(r,v) devolve apenas a energia Kepleriana (v²/2 − μ/r),
+# que oscila FISICAMENTE sob os harmônicos zonais e mascara o erro numérico.
+# O geopotencial J2+J3+J4 é CONSERVATIVO, logo a energia total
+#     ε_tot = v²/2 − μ/r + V_J2 + V_J3 + V_J4
+# é uma invariante exata do modelo. Subtraindo o potencial de TODOS os
+# harmônicos ativos (não só J2), o resíduo de ε_tot passa a ser dominado pelo
+# erro de integração — revelando a diferença entre Vern7 (deriva secular) e
+# Yoshida6 (oscilação limitada, sem deriva). Os V_Jn usam os MESMOS *_active da
+# dinâmica, então a correção zera sozinha no modo Dois Corpos (energia Kepleriana).
+#     V_J2 = (μ J2 R²)/(2 r³) · (3 s² − 1)                    , s = z/r
+#     V_J3 = (μ J3 R³)/(2 r⁴) · (5 s³ − 3 s)
+#     V_J4 = (μ J4 R⁴)/(8 r⁵) · (35 s⁴ − 30 s² + 3)
+function corrected_orbital_energy(r, v)
+    rmag = norm(r)
+    s    = r[3] / rmag
+    R    = R_EARTH
+    V_J2 = (μ_EARTH * j2_active * R^2) / (2 * rmag^3) * (3s^2 - 1)
+    V_J3 = (μ_EARTH * j3_active * R^3) / (2 * rmag^4) * (5s^3 - 3s)
+    V_J4 = (μ_EARTH * j4_active * R^4) / (8 * rmag^5) * (35s^4 - 30s^2 + 3)
+    return specific_orbital_energy(r, v) + V_J2 + V_J3 + V_J4
+end
 
 # ─── Propagação ─────────────────────────────────────────────────────────────
 
@@ -146,7 +184,7 @@ for k in eachindex(sol.t)
     push!(Ωs, rad2deg(el.Ω))
     push!(ωs, rad2deg(el.ω))
     push!(νs, rad2deg(el.ν))
-    push!(εs, specific_orbital_energy(r_sv, v_sv))
+    push!(εs, corrected_orbital_energy(r_sv, v_sv))
 end
 
 # ─── Diretório de saída ──────────────────────────────────────────────────────
@@ -155,7 +193,8 @@ outdir = joinpath(@__DIR__, "../../data/output/perturbations")
 mkpath(outdir)
 
 integrador_label = USE_SYMPLECTIC ? "Yoshida6" : "Vern7"
-prefix = "cw_$(lowercase(integrador_label))"
+model_tag = APPLY_PERTURBATIONS ? "j2j3j4" : "twobody"
+prefix = "cw_$(lowercase(integrador_label))_$(model_tag)"
 
 # ─── Fig 1 — Trajetória 3D ──────────────────────────────────────────────────
 
@@ -165,7 +204,7 @@ p3d = plot3d(xs/1e6, ys/1e6, zs/1e6;
              label="Trajetória ($integrador_label)",
              lw=0.6, color=:royalblue,
              xlabel="X [Mm]", ylabel="Y [Mm]", zlabel="Z [Mm]",
-             title="Órbita LEO — Cowell J2+J3+J4 ($integrador_label)",
+             title="Órbita LEO — Cowell $model_label ($integrador_label)",
              legend=:topright, size=(800, 700), dpi=150)
 
 # Esfera terrestre (wireframe aproximado)
@@ -205,7 +244,7 @@ pν = plot(times, νs;    title="Anomalia Verdadeira", ylabel="ν [°]",     xla
 
 p_elem = plot(pa, pe, pi_, pΩ, pω, pν;
               layout=lay, size=(1200, 900), dpi=150,
-              plot_title="Elementos Orbitais — Cowell J2+J3+J4 ($integrador_label)")
+              plot_title="Elementos Orbitais — Cowell $model_label ($integrador_label)")
 savefig(p_elem, joinpath(outdir, "$(prefix)_fig2_elementos.png"))
 @printf("✓\n")
 
@@ -218,7 +257,7 @@ savefig(p_elem, joinpath(outdir, "$(prefix)_fig2_elementos.png"))
 
 lay_e = @layout [a; b]
 pε1 = plot(times, εs / 1e6;
-           title="Energia Orbital Específica",
+           title=APPLY_PERTURBATIONS ? "Energia Específica (corrigida por J2)" : "Energia Específica (Kepler)",
            ylabel="ε [MJ/kg]", xlabel="",
            lw=1.2, color=:royalblue, legend=false)
 pε2 = plot(times, Δε_rel * 1e10;
@@ -228,7 +267,7 @@ pε2 = plot(times, Δε_rel * 1e10;
 hline!(pε2, [0.0]; color=:black, ls=:dash, lw=1, label="")
 
 p_ener = plot(pε1, pε2; layout=lay_e, size=(900, 600), dpi=150,
-              plot_title="Conservação de Energia — $integrador_label")
+              plot_title="Conservação de Energia — $integrador_label ($model_label)")
 savefig(p_ener, joinpath(outdir, "$(prefix)_fig3_energia.png"))
 @printf("✓\n")
 
