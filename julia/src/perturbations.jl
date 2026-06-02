@@ -24,45 +24,51 @@ function accel_j_harmonics(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float6
                             R_body::Float64=R_EARTH,
                             j2::Float64=J2,
                             j3::Float64=J3,
-                            j4::Float64=-1.08262545e-6,
+                            j4::Float64=-1.08262545e-6, # Valores típicos de J4 e J6 da Terra
                             j6::Float64=-5.40681239e-7)
     x, y, z = r[1], r[2], r[3]
     rnorm   = norm(r)
     r2      = rnorm^2
-    r5      = rnorm^5
-    z2      = z^2
-    Rr2     = (R_body / rnorm)^2
 
-    # J2 — oblateidade terrestre
-    # Sinal negativo: a_Jn = ∇U_Jn com U = (μ/r)[1 − ΣJn(R/r)ⁿPn(sinφ)]
-    fac_j2  = -1.5 * j2 * μ * R_body^2 / r5
-    z2r2    = z2 / r2
-    a_j2    = SVector(fac_j2 * x * (1.0 - 5.0*z2r2),
-                      fac_j2 * y * (1.0 - 5.0*z2r2),
-                      fac_j2 * z * (3.0 - 5.0*z2r2))
+    # Cossenos diretores (x/r, y/r, z/r): as acelerações zonais são
+    # adimensionais na direção e dependem só de R/r e de z/r. Multiplicar pela
+    # posição em metros (x, y, z) em vez de x/r introduz um fator espúrio de r.
+    x_r   = x / rnorm
+    y_r   = y / rnorm
+    z_r   = z / rnorm
+    z_r2  = z_r^2
+    z_r3  = z_r^3
+    z_r4  = z_r^4
 
-    # J3 — assimetria norte-sul
-    fac_j3  = -2.5 * j3 * μ * R_body^3 / (r5 * rnorm)
-    a_j3    = SVector(fac_j3 * x * (3.0*z - 7.0*z2r2*z) / rnorm,
-                      fac_j3 * y * (3.0*z - 7.0*z2r2*z) / rnorm,
-                      fac_j3 * (6.0*z2 - 7.0*z2*z2/r2 - 3.0*r2/5.0) / rnorm)
-
-    # J4 — achatamento de 4ª ordem
-    fac_j4  = (5.0/8.0) * j4 * μ * R_body^4 / (r5 * r2)
-    z2r2_2  = z2r2^2
-    a_j4    = SVector(fac_j4 * x * (3.0 - 42.0*z2r2 + 63.0*z2r2_2),
-                      fac_j4 * y * (3.0 - 42.0*z2r2 + 63.0*z2r2_2),
-                      fac_j4 * z * (15.0 - 70.0*z2r2 + 63.0*z2r2_2))
-
-    # J6 — harmônica zonal de 6ª ordem
-    fac_j6  = (j6 * μ * R_body^6) / (16.0 * r5 * r2 * r2)
-    z2r2_3  = z2r2^3
-    a_j6    = SVector(fac_j6 * x * (-35.0 + 945.0*z2r2 - 3465.0*z2r2_2 + 3003.0*z2r2_3),
-                      fac_j6 * y * (-35.0 + 945.0*z2r2 - 3465.0*z2r2_2 + 3003.0*z2r2_3),
-                      fac_j6 * z * (-315.0 + 3465.0*z2r2 - 9009.0*z2r2_2 + 6435.0*z2r2_3))
-
-    # aceleração gravitacional de dois corpos
+    # Termo de dois corpos (Two-Body)
     a_tb = -μ / (rnorm^3) * r
+
+    # --- J2 ---
+    fac_j2 = -1.5 * j2 * (μ / r2) * (R_body / rnorm)^2
+    a_j2 = SVector(fac_j2 * x_r * (1.0 - 5.0 * z_r2),
+                   fac_j2 * y_r * (1.0 - 5.0 * z_r2),
+                   fac_j2 * z_r * (3.0 - 5.0 * z_r2))
+
+    # --- J3 ---
+    # Componente z: polinômio (30 z_r² − 35 z_r⁴ − 3) — forma conservativa
+    # (consistente com as componentes x,y; o sinal oposto torna o campo não-
+    # conservativo, como detectado pelo teste de energia).
+    fac_j3 = -0.5 * j3 * (μ / r2) * (R_body / rnorm)^3
+    a_j3 = SVector(fac_j3 * x_r * (15.0 * z_r - 35.0 * z_r3),
+                   fac_j3 * y_r * (15.0 * z_r - 35.0 * z_r3),
+                   fac_j3 * (30.0 * z_r2 - 35.0 * z_r4 - 3.0))
+
+    # --- J4 ---
+    fac_j4 = (5.0 / 8.0) * j4 * (μ / r2) * (R_body / rnorm)^4
+    a_j4 = SVector(fac_j4 * x_r * (3.0 - 42.0 * z_r2 + 63.0 * z_r4),
+                   fac_j4 * y_r * (3.0 - 42.0 * z_r2 + 63.0 * z_r4),
+                   fac_j4 * z_r * (15.0 - 70.0 * z_r2 + 63.0 * z_r4))
+
+    # --- J6 ---
+    fac_j6 = (1.0 / 16.0) * j6 * (μ / r2) * (R_body / rnorm)^6
+    a_j6 = SVector(fac_j6 * x_r * (-35.0 + 945.0 * z_r2 - 3465.0 * z_r4 + 3003.0 * (z_r2^3)),
+                   fac_j6 * y_r * (-35.0 + 945.0 * z_r2 - 3465.0 * z_r4 + 3003.0 * (z_r2^3)),
+                   fac_j6 * z_r * (-315.0 + 3465.0 * z_r2 - 9009.0 * z_r4 + 6435.0 * (z_r2^3)))
 
     return a_tb + a_j2 + a_j3 + a_j4 + a_j6
 end
