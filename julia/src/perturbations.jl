@@ -43,8 +43,8 @@ function accel_j_harmonics(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float6
 
     # J3 — assimetria norte-sul
     fac_j3  = -2.5 * j3 * μ * R_body^3 / (r5 * rnorm)
-    a_j3    = SVector(fac_j3 * x * (3.0*z - 7.0*z2r2*rnorm) / rnorm,
-                      fac_j3 * y * (3.0*z - 7.0*z2r2*rnorm) / rnorm,
+    a_j3    = SVector(fac_j3 * x * (3.0*z - 7.0*z2r2*z) / rnorm,
+                      fac_j3 * y * (3.0*z - 7.0*z2r2*z) / rnorm,
                       fac_j3 * (6.0*z2 - 7.0*z2*z2/r2 - 3.0*r2/5.0) / rnorm)
 
     # J4 — achatamento de 4ª ordem
