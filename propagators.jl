@@ -11,6 +11,9 @@ using LinearAlgebra
 const μ_EARTH   = 3.986004418e14   # m³/s² — parâmetro gravitacional padrão
 const R_EARTH   = 6.3781366e6      # m     — raio equatorial
 const J2        = 1.08262668e-3    # —       coeficiente de achatamento J2
+const J3        = -2.53265648e-6   # —       harmônica zonal J3 (usada pelo Cowell)
+const J4        = -1.08262545e-6   # —       harmônica zonal J4
+const J6        = -5.40681239e-7   # —       harmônica zonal J6
 const ω_EARTH   = 7.2921150e-5     # rad/s — velocidade angular da Terra
 
 """
@@ -155,7 +158,8 @@ Integrador Runge-Kutta-Fehlberg RKF4(5) com controle adaptativo de passo
 propagador Kepleriano analítico. O passo é ajustado a cada iteração para
 manter a norma WRMS do erro ≤ 1. Espelhado em C# (OrbitalMechanics.PropagateRkf45).
 """
-function propagate_rkf45(s0::OrbitalState, Δt; rtol=1e-10, atol=1e-3, h0=nothing, μ=μ_EARTH)
+function propagate_rkf45(s0::OrbitalState, Δt, accel_fn=accel_two_body;
+                         rtol=1e-10, atol=1e-3, h0=nothing, μ=μ_EARTH)
     tf    = s0.t + Δt
     h     = isnothing(h0) ? Δt / 100.0 : h0
     h     = min(h, Δt)
@@ -163,7 +167,7 @@ function propagate_rkf45(s0::OrbitalState, Δt; rtol=1e-10, atol=1e-3, h0=nothin
 
     while state.t < tf - 1e-12 * abs(Δt)
         h = min(h, tf - state.t)
-        s4, err_r, err_v = rkf45_step(state, h; μ)
+        s4, err_r, err_v = rkf45_step(state, h, accel_fn; μ)
         ε = rkf45_error_norm(err_r, err_v, state.r, state.v, s4.r, s4.v, atol, rtol)
 
         if ε ≤ 1.0 || h < 1e-3
@@ -177,16 +181,61 @@ function propagate_rkf45(s0::OrbitalState, Δt; rtol=1e-10, atol=1e-3, h0=nothin
     return OrbitalState(state.r, state.v, tf)
 end
 
+"""
+    propagate_cowell(s0, Δt; rtol, atol, h0, μ) -> OrbitalState
+
+Método de Cowell: integração numérica (RKF45 adaptativo) das equações de movimento
+cartesianas com o geopotencial zonal J2+J3+J4+J6 (`accel_j_harmonics`). Espelhado em
+C# (OrbitalMechanics.PropagateCowell). Com J3=J4=J6=0 equivale ao modelo J2.
+"""
+propagate_cowell(s0::OrbitalState, Δt; rtol=1e-10, atol=1e-3, h0=nothing, μ=μ_EARTH) =
+    propagate_rkf45(s0, Δt, accel_j_harmonics; rtol, atol, h0, μ)
+
 # ── Funções auxiliares ────────────────────────────────────────
 
 accel_two_body(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float64; μ=μ_EARTH) =
     -μ / norm(r)^3 * r
 
-# Um passo do tableau de Fehlberg RKF4(5).
+# Aceleração com harmônicas zonais J2+J3+J4+J6 (dois corpos + perturbação).
+# Espelha accel_j_harmonics em julia/src/perturbations.jl. Usa cossenos diretores
+# (x/r, y/r, z/r) — multiplicar pela posição em metros introduz fator espúrio de r.
+function accel_j_harmonics(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float64;
+                            μ=μ_EARTH, R_body=R_EARTH, j2=J2, j3=J3, j4=J4, j6=J6)
+    rnorm = norm(r)
+    r2    = rnorm^2
+    x_r, y_r, z_r = r[1]/rnorm, r[2]/rnorm, r[3]/rnorm
+    z_r2, z_r3, z_r4, z_r6 = z_r^2, z_r^3, z_r^4, z_r^6
+
+    a_tb = -μ / rnorm^3 * r
+
+    fac_j2 = -1.5 * j2 * (μ / r2) * (R_body / rnorm)^2
+    a_j2 = SVector(fac_j2 * x_r * (1.0 - 5.0 * z_r2),
+                   fac_j2 * y_r * (1.0 - 5.0 * z_r2),
+                   fac_j2 * z_r * (3.0 - 5.0 * z_r2))
+
+    fac_j3 = -0.5 * j3 * (μ / r2) * (R_body / rnorm)^3
+    a_j3 = SVector(fac_j3 * x_r * (15.0 * z_r - 35.0 * z_r3),
+                   fac_j3 * y_r * (15.0 * z_r - 35.0 * z_r3),
+                   fac_j3 * (30.0 * z_r2 - 35.0 * z_r4 - 3.0))
+
+    fac_j4 = (5.0 / 8.0) * j4 * (μ / r2) * (R_body / rnorm)^4
+    a_j4 = SVector(fac_j4 * x_r * (3.0 - 42.0 * z_r2 + 63.0 * z_r4),
+                   fac_j4 * y_r * (3.0 - 42.0 * z_r2 + 63.0 * z_r4),
+                   fac_j4 * z_r * (15.0 - 70.0 * z_r2 + 63.0 * z_r4))
+
+    fac_j6 = (1.0 / 16.0) * j6 * (μ / r2) * (R_body / rnorm)^6
+    a_j6 = SVector(fac_j6 * x_r * (-35.0 + 945.0 * z_r2 - 3465.0 * z_r4 + 3003.0 * z_r6),
+                   fac_j6 * y_r * (-35.0 + 945.0 * z_r2 - 3465.0 * z_r4 + 3003.0 * z_r6),
+                   fac_j6 * z_r * (-315.0 + 3465.0 * z_r2 - 9009.0 * z_r4 + 6435.0 * z_r6))
+
+    return a_tb + a_j2 + a_j3 + a_j4 + a_j6
+end
+
+# Um passo do tableau de Fehlberg RKF4(5) com aceleração plugável.
 # Retorna (s4, err_r, err_v) — err = solução 5ª − solução 4ª.
-function rkf45_step(s::OrbitalState, h::Float64; μ=μ_EARTH)
+function rkf45_step(s::OrbitalState, h::Float64, accel_fn=accel_two_body; μ=μ_EARTH)
     r, v, t = s.r, s.v, s.t
-    f(r, v, t) = (v, accel_two_body(r, v, t; μ))
+    f(r, v, t) = (v, accel_fn(r, v, t; μ))
 
     k1r, k1v = f(r, v, t)
     k2r, k2v = f(r + h*(1/4)*k1r,
