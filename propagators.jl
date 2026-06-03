@@ -147,7 +147,80 @@ function propagate_rk4(s0::OrbitalState, Δt, accel_fn; nsteps=1000)
     return OrbitalState(state.r, state.v, s0.t + Δt)
 end
 
+"""
+    propagate_rkf45(s0, Δt; rtol, atol, h0, μ) -> OrbitalState
+
+Integrador Runge-Kutta-Fehlberg RKF4(5) com controle adaptativo de passo
+(tableau de Fehlberg). Aceleração de dois corpos puro — converge para o
+propagador Kepleriano analítico. O passo é ajustado a cada iteração para
+manter a norma WRMS do erro ≤ 1. Espelhado em C# (OrbitalMechanics.PropagateRkf45).
+"""
+function propagate_rkf45(s0::OrbitalState, Δt; rtol=1e-10, atol=1e-3, h0=nothing, μ=μ_EARTH)
+    tf    = s0.t + Δt
+    h     = isnothing(h0) ? Δt / 100.0 : h0
+    h     = min(h, Δt)
+    state = s0
+
+    while state.t < tf - 1e-12 * abs(Δt)
+        h = min(h, tf - state.t)
+        s4, err_r, err_v = rkf45_step(state, h; μ)
+        ε = rkf45_error_norm(err_r, err_v, state.r, state.v, s4.r, s4.v, atol, rtol)
+
+        if ε ≤ 1.0 || h < 1e-3
+            state = s4
+            h    *= ε > 0.0 ? min(5.0, 0.9 * ε^(-0.2)) : 5.0
+        else
+            h    *= max(0.1, 0.9 * ε^(-0.2))
+        end
+    end
+
+    return OrbitalState(state.r, state.v, tf)
+end
+
 # ── Funções auxiliares ────────────────────────────────────────
+
+accel_two_body(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float64; μ=μ_EARTH) =
+    -μ / norm(r)^3 * r
+
+# Um passo do tableau de Fehlberg RKF4(5).
+# Retorna (s4, err_r, err_v) — err = solução 5ª − solução 4ª.
+function rkf45_step(s::OrbitalState, h::Float64; μ=μ_EARTH)
+    r, v, t = s.r, s.v, s.t
+    f(r, v, t) = (v, accel_two_body(r, v, t; μ))
+
+    k1r, k1v = f(r, v, t)
+    k2r, k2v = f(r + h*(1/4)*k1r,
+                  v + h*(1/4)*k1v,  t + h/4)
+    k3r, k3v = f(r + h*(3/32*k1r   + 9/32*k2r),
+                  v + h*(3/32*k1v   + 9/32*k2v),  t + 3h/8)
+    k4r, k4v = f(r + h*(1932/2197*k1r - 7200/2197*k2r + 7296/2197*k3r),
+                  v + h*(1932/2197*k1v - 7200/2197*k2v + 7296/2197*k3v),  t + 12h/13)
+    k5r, k5v = f(r + h*(439/216*k1r - 8k2r + 3680/513*k3r - 845/4104*k4r),
+                  v + h*(439/216*k1v - 8k2v + 3680/513*k3v - 845/4104*k4v),  t + h)
+    k6r, k6v = f(r + h*(-8/27*k1r + 2k2r - 3544/2565*k3r + 1859/4104*k4r - 11/40*k5r),
+                  v + h*(-8/27*k1v + 2k2v - 3544/2565*k3v + 1859/4104*k4v - 11/40*k5v),
+                  t + h/2)
+
+    # 4ª ordem (avança o estado)
+    r4 = r + h*(25/216*k1r + 1408/2565*k3r + 2197/4104*k4r - 1/5*k5r)
+    v4 = v + h*(25/216*k1v + 1408/2565*k3v + 2197/4104*k4v - 1/5*k5v)
+    # 5ª ordem (estima o erro)
+    r5 = r + h*(16/135*k1r + 6656/12825*k3r + 28561/56430*k4r - 9/50*k5r + 2/55*k6r)
+    v5 = v + h*(16/135*k1v + 6656/12825*k3v + 28561/56430*k4v - 9/50*k5v + 2/55*k6v)
+
+    return OrbitalState(r4, v4, t+h), r5-r4, v5-v4
+end
+
+# Norma WRMS do erro (3 posição + 3 velocidade).
+function rkf45_error_norm(err_r, err_v, r_old, v_old, r_new, v_new, atol, rtol)
+    n = 0.0
+    @inbounds for i in 1:3
+        sc_r = atol + rtol * max(abs(r_old[i]), abs(r_new[i]))
+        sc_v = atol + rtol * max(abs(v_old[i]), abs(v_new[i]))
+        n   += (err_r[i]/sc_r)^2 + (err_v[i]/sc_v)^2
+    end
+    return sqrt(n / 6)
+end
 
 function acceleration_j2(r::SVector{3,Float64}, ::SVector{3,Float64}, ::Float64; μ=μ_EARTH)
     rnorm = norm(r)
