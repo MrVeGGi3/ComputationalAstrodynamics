@@ -31,7 +31,7 @@ gr()
 
 # ─── Configuração ───────────────────────────────────────────────────────────
 
-const USE_SYMPLECTIC = false #false → Vern7 | true → Yoshida6
+const USE_SYMPLECTIC = true #false → Vern7 | true → Yoshida6
 
 # Liga/desliga as perturbações do geopotencial:
 #   true  → modelo perturbado (J2+J3+J4) — como hoje
@@ -133,11 +133,14 @@ if !USE_SYMPLECTIC
                  saveat=collect(t_sample))
     @printf("✓  (%d passos internos)\n\n", length(sol.t))
 else
-    # Yoshida6 — SecondOrderODEProblem separado em posição/velocidade
+    # Yoshida6 — SecondOrderODEProblem separado em posição/velocidade.
+    # O integrador simplético exige aceleração puramente dependente de (r, t).
+    # Como o geopotencial Jn depende apenas da posição, passamos uma velocidade
+    # dummy nula para satisfazer a assinatura de `geopotencial` sem introduzir
+    # qualquer dependência em v.
     function accel_pos!(dv, v, r, p, t)
         r_sv = SVector(r[1], r[2], r[3])
-        v_sv = SVector(v[1], v[2], v[3])
-        a    = geopotencial(r_sv, v_sv, t)
+        a    = geopotencial(r_sv, SVector(0.0, 0.0, 0.0), t)
         dv[1] = a[1]; dv[2] = a[2]; dv[3] = a[3]
     end
     r0    = [s0.r[1], s0.r[2], s0.r[3]]
@@ -168,9 +171,11 @@ for k in eachindex(sol.t)
         r_sv = SVector(u[1], u[2], u[3])
         v_sv = SVector(u[4], u[5], u[6])
     else
-        # SecondOrderODEProblem retorna ArrayPartition(v, r)
-        r_sv = SVector(sol.u[k].x[2][1], sol.u[k].x[2][2], sol.u[k].x[2][3])
-        v_sv = SVector(sol.u[k].x[1][1], sol.u[k].x[1][2], sol.u[k].x[1][3])
+        # SecondOrderODEProblem: sol.u[k] é a ArrayPartition(v, r), que sob
+        # indexação linear se concatena em [velocidades; posições] ⇒ 1:3 = v,
+        # 4:6 = r. (Note: sol[k] com índice escalar seleciona variável, não passo.)
+        v_sv = SVector(sol.u[k][1], sol.u[k][2], sol.u[k][3])
+        r_sv = SVector(sol.u[k][4], sol.u[k][5], sol.u[k][6])
     end
 
     push!(times, (t_k - s0.t) / 86400)   # dias
@@ -231,16 +236,40 @@ savefig(p3d, joinpath(outdir, "$(prefix)_fig1_orbita3d.png"))
 
 @printf("Gerando figura 2 (elementos orbitais) ... ")
 
+# Unwrap manual em graus: remove os saltos de 360°→0° (e 0°→360°) acumulando
+# múltiplos de 360° sempre que a variação entre amostras consecutivas excede
+# meio período. Sem isso, as curvas de Ω, ω e ν ao longo das 1000 órbitas ficam
+# estriadas/borradas pelo "wrapping" do intervalo [0°, 360°).
+function unwrap_deg(angles)
+    out  = similar(angles)
+    out[1] = angles[1]
+    offset = 0.0
+    @inbounds for k in 2:length(angles)
+        d = angles[k] - angles[k-1]
+        if d > 180.0
+            offset -= 360.0
+        elseif d < -180.0
+            offset += 360.0
+        end
+        out[k] = angles[k] + offset
+    end
+    return out
+end
+
+Ωs_u = unwrap_deg(Ωs)
+ωs_u = unwrap_deg(ωs)
+νs_u = unwrap_deg(νs)
+
 lay = @layout [a b; c d; e f]
 pa = plot(times, as;     title="Semi-eixo Maior",   ylabel="a [km]",   xlabel="", lw=1.2, color=:royalblue,  legend=false)
 pe = plot(times, es;     title="Excentricidade",    ylabel="e",         xlabel="", lw=1.2, color=:darkorange, legend=false)
 pi_ = plot(times, is;   title="Inclinação",         ylabel="i [°]",     xlabel="", lw=1.2, color=:green4,    legend=false)
-pΩ = plot(times, Ωs;    title="RAAN Ω",             ylabel="Ω [°]",     xlabel="", lw=1.2, color=:crimson,   legend=false)
-# linha de referência analítica J2 para Ω
-Ω_ref = [rad2deg(Ωs[1] * π/180 + dΩ_dt * d*86400) for d in times]
+pΩ = plot(times, Ωs_u;  title="RAAN Ω",             ylabel="Ω [°]",     xlabel="", lw=1.2, color=:crimson,   legend=false)
+# linha de referência analítica J2 para Ω (também sem wrapping, partindo de Ωs_u[1])
+Ω_ref = [rad2deg(Ωs_u[1] * π/180 + dΩ_dt * d*86400) for d in times]
 plot!(pΩ, times, Ω_ref; label="J2 analítico", color=:black, ls=:dash, lw=1.2)
-pω = plot(times, ωs;    title="Arg. Perigeu ω",     ylabel="ω [°]",     xlabel="Tempo [dias]", lw=1.2, color=:purple3, legend=false)
-pν = plot(times, νs;    title="Anomalia Verdadeira", ylabel="ν [°]",     xlabel="Tempo [dias]", lw=1.2, color=:steelblue, legend=false)
+pω = plot(times, ωs_u;  title="Arg. Perigeu ω",     ylabel="ω [°]",     xlabel="Tempo [dias]", lw=1.2, color=:purple3, legend=false)
+pν = plot(times, νs_u;  title="Anomalia Verdadeira", ylabel="ν [°]",     xlabel="Tempo [dias]", lw=1.2, color=:steelblue, legend=false)
 
 p_elem = plot(pa, pe, pi_, pΩ, pω, pν;
               layout=lay, size=(1200, 900), dpi=150,
@@ -279,9 +308,9 @@ savefig(p_ener, joinpath(outdir, "$(prefix)_fig3_energia.png"))
 @printf("  Δa         = %+.3f m\n",  (as[end] - as[1]) * 1e3)
 @printf("  Δe         = %+.3e\n",    es[end] - es[1])
 @printf("  Δi         = %+.4f °\n",  is[end] - is[1])
-@printf("  ΔΩ numérico= %+.3f °\n",  Ωs[end] - Ωs[1])
+@printf("  ΔΩ numérico= %+.3f °\n",  Ωs_u[end] - Ωs_u[1])   # unwrapped: comparável ao secular
 @printf("  ΔΩ analítico=%+.3f °\n",  rad2deg(dΩ_dt * Δt_total))
-@printf("  Δω         = %+.3f °\n",  ωs[end] - ωs[1])
+@printf("  Δω         = %+.3f °\n",  ωs_u[end] - ωs_u[1])
 @printf("  |Δε/ε₀|max = %.2e\n",     maximum(abs.(Δε_rel)))
 @printf("\n  Figuras salvas em: %s\n", outdir)
 @printf("  Prefixo: %s_fig[1-3]_*.png\n", prefix)
