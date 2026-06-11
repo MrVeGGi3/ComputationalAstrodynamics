@@ -219,3 +219,81 @@ function _parse_tle_decimal(s::String)
 
     return sign * mantissa * 10.0^(exp_sign * exp_val)
 end
+
+# Encontrar Anomalia Excentrica numericamente
+function kepler_newton_raphson(M, e; tol=1e-12, max_iter=100)
+    # Chute inicial padrão (bom para e < 0.8)
+    E = M 
+    
+    for i in 1:max_iter
+        f = E - e * sin(E) - M
+        df = 1 - e * cos(E)
+        
+        ΔE = f / df
+        E -= ΔE
+        
+        # Critério de parada baseado na precisão desejada
+        if abs(ΔE) < tol
+            return E
+        end
+    end
+    
+    error("O método de Newton-Raphson não convergiu após $max_iter iterações.")
+end
+
+function transform_cartesian_vector(h, μ, e, ν, mtx::Matrix)
+    mult_r = h^2 / (μ * (1 + e * cos(ν)))
+    μh_ratio =  μ / h
+    
+    true_anom_cos = cos(ν)
+    true_anom_sin = sin(ν)
+
+    r_perifocal = [mult_r * true_anom_cos, 
+                   mult_r * true_anom_sin, 
+                   0.0]
+
+    v_perifocal = [-μh_ratio * true_anom_sin,           # Corrigido para -sin(ν)
+                    μh_ratio * (e + true_anom_cos),     # Corrigido para e + cos(ν)
+                    0.0]              
+    
+
+    r_new = mtx' * r_perifocal
+    v_new = mtx' * v_perifocal
+
+    return r_new, v_new
+end
+
+function cosine_matrix(Ω,ω,i)
+    sin_Ω = sin(Ω)
+    sin_ω = sin(ω)
+    sin_i = sin(i)
+    cos_Ω  = cos(Ω)
+    cos_ω = cos(ω)
+    cos_i = cos(i)
+
+
+    matrix = [  -sin_Ω * cos_i * sin_ω + cos_Ω * cos_ω   cos_Ω * cos_i * sin_ω + sin_Ω * cos_ω   sin_i * sin_ω;
+                -sin_Ω * cos_i * cos_ω - cos_Ω * sin_ω   cos_Ω * cos_i * cos_ω - sin_Ω * sin_ω   sin_i * cos_ω;
+                sin_Ω * sin_i                            -cos_Ω * sin_i                            cos_i]
+
+    return matrix
+end
+
+function rotation_z_axis_matrix(ν)
+    angle_sin = sin(ν)
+    angle_cos = cos(ν)
+
+    r_3 = [ angle_cos  angle_sin  0;
+            -angle_sin  angle_cos  0;
+            0           0          1]
+        
+    return r_3
+end
+
+
+function find_declination_and_right_ascention(r)
+    r_mag = sqrt(r[1]^2 + r[2]^2 + r[3]^2)
+    δ = asin(clamp(r[3] / r_mag, -1.0, 1.0))
+    α = atan(r[2], r[1])
+    return δ, α
+end

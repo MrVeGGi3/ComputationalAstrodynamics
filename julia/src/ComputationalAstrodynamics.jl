@@ -137,5 +137,9 @@ export propagate_cr3bp, stability_lagrange
 export print_orbit_summary
 export parse_tle
 export is_visible, access_intervals
+export kepler_newton_raphson
+export transform_cartesian_vector
+export cosine_matrix, rotation_z_axis_matrix
+export find_declination_and_right_ascention
 
 end # module
