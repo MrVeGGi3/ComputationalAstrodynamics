@@ -31,7 +31,7 @@ gr()
 
 # ─── Configuração ───────────────────────────────────────────────────────────
 
-const USE_SYMPLECTIC = true #false → Vern7 | true → Yoshida6
+const USE_SYMPLECTIC = false #false → Vern7 | true → Yoshida6
 
 # Liga/desliga as perturbações do geopotencial:
 #   true  → modelo perturbado (J2+J3+J4) — como hoje
@@ -50,12 +50,12 @@ const model_label = APPLY_PERTURBATIONS ? "J2+J3+J4" : "Dois Corpos"
 # ─── Condições iniciais ─────────────────────────────────────────────────────
 
 el0 = KeplerianElements(
-    8_059_000.0,          # a [m]   
-    0.17136,                # e
-    deg2rad(28.0),        # i       
-    deg2rad(45.0),         # Ω
-    deg2rad(30.0),         # ω
-    deg2rad(40.0),         # ν
+    8_350_000.0,          # a [m]   
+    0.19760,                # e
+    deg2rad(60.0),        # i       
+    deg2rad(270.0),         # Ω
+    deg2rad(45.0),         # ω
+    deg2rad(45.0),         # ν
 )
 s0 = keplerian_to_cartesian(el0)
 
