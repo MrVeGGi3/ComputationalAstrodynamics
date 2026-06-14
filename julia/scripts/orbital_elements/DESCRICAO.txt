@@ -1,0 +1,135 @@
+================================================================================
+  SCRIPTS DE ELEMENTOS ORBITAIS — DESCRIÇÃO E LÓGICA
+================================================================================
+
+Este diretório contém scripts para o cálculo analítico e verificação numérica
+dos elementos orbitais das quatro cônicas kepleranas: círculo, elipse, parábola
+e hipérbole. Um script geral (comuns.jl) trata qualquer cônica automaticamente.
+Todos os scripts são autossuficientes e imprimem os resultados no terminal.
+
+Os 8 parâmetros orbitais calculados em todos os scripts são:
+  1. Velocidade — Equação Vis-Viva
+  2. Semi-latus rectum
+  3. Anomalia verdadeira ν
+  4. Ângulo da trajetória (Flight Path Angle, γ)
+  5. Semi-eixo maior a
+  6. Período de trânsito T
+  7. Conservação do momento angular h⃗
+  8. Excentricidade e (via raios rp e ra)
+
+--------------------------------------------------------------------------------
+1. comuns.jl — Fórmulas Gerais para Todas as Cônicas
+--------------------------------------------------------------------------------
+
+OBJETIVO
+  Demonstrar que as mesmas fórmulas da mecânica orbital funcionam para qualquer
+  tipo de cônica. O script classifica a trajetória automaticamente por e e aplica
+  as fórmulas gerais, tratando os casos degenerados (parábola: a→∞, hipérbole:
+  ra→∞) de forma consistente.
+
+LÓGICA
+  - Define funções vetoriais: momento_angular, vetor_excentricidade (Laplace-
+    Runge-Lenz), energia_especifica, anomalia_verdadeira (com desambiguação
+    de quadrante por sinal de r⃗·v⃗)
+  - Executa 4 exemplos a partir da mesma altitude de referência (h=400 km),
+    variando apenas a velocidade inicial:
+      v = v_c       → círculo   (e=0)
+      v = 0.85·v_e  → elipse    (e≈0.73, tipo GTO)
+      v = v_e       → parábola  (e=1, ε=0)
+      v = 1.2·v_e   → hipérbole (e>1, ε>0)
+  - Imprime um resumo tabular com todos os 8 parâmetros para cada caso,
+    incluindo verificação cruzada (vis-viva vs. ‖v⃗‖)
+
+--------------------------------------------------------------------------------
+2. circulo.jl — Cônica: Círculo (e = 0)
+--------------------------------------------------------------------------------
+
+FÍSICA
+  A órbita circular ocorre quando a velocidade é exatamente a velocidade
+  circular v_c = √(μ/r). Consequências:
+    • a = r  (semi-eixo igual ao raio)
+    • γ = 0° (velocidade sempre perpendicular ao raio, FPA nulo)
+    • ν indefinida (todos os pontos são geometricamente equivalentes)
+    • h = √(μ·r) constante
+
+LÓGICA
+  - Implementa funções específicas para e=0: velocidade_circular, semi_latus_
+    rectum_circular, angulo_trajetoria_circular, periodo_circular, etc.
+  - Analisa 3 órbitas reais: ISS (h≈408 km), GPS (h≈20200 km), GEO (h≈35786 km)
+  - Exibe tabela comparativa com 5 altitudes (200, 408, 2000, 20200, 35786 km)
+    mostrando como v_c e T variam com a altitude
+
+--------------------------------------------------------------------------------
+3. elipse.jl — Cônica: Elipse (0 < e < 1)
+--------------------------------------------------------------------------------
+
+FÍSICA
+  A elipse corresponde a ε < 0 (energia negativa, órbita ligada). A velocidade
+  está entre a circular e a de escape: v_c < v < v_e.
+    • γ > 0 para 0 < ν < π (afastamento do perigeu)
+    • γ < 0 para π < ν < 2π (aproximação)
+    • γ = 0 em ν=0 (perigeu) e ν=π (apogeu)
+    • T = 2π√(a³/μ) — 3ª Lei de Kepler
+
+LÓGICA
+  - Mesmas 8 funções dos elementos, mas com tratamento de γ variável com ν
+  - Exemplos estudados:
+      GTO  — perigeu ≈ 200 km, apogeu ≈ 35786 km (transferência LEO→GEO)
+      Molniya — perigeu ≈ 500 km, apogeu ≈ 40000 km, i=63.4°
+      Hohmann — transferência ISS (≈400 km) → altitude GPS (≈20200 km)
+  - Calcula Δv₁ e Δv₂ para a transferência de Hohmann e o ganho de altitude
+
+--------------------------------------------------------------------------------
+4. parabola.jl — Cônica: Parábola (e = 1)
+--------------------------------------------------------------------------------
+
+FÍSICA
+  A parábola é a trajetória de escape mínimo: ε = 0, v = v_e = √(2μ/r).
+  O corpo atinge o infinito com velocidade nula.
+    • a → ∞  (trajetória aberta, nunca retorna)
+    • p = 2·rp  (semi-latus rectum em função do pericentro)
+    • ν ∈ (−π, π); assíntota em ν = ±π
+    • γ = ν/2 (identidade trigonométrica — FPA cresce linearmente com ν)
+    • T → ∞
+
+LÓGICA
+  - Trata 1/a = 0 na Vis-Viva como caso especial: v = √(2μ/r)
+  - Exemplos:
+      Escape da Terra de h = 400 km  (v_e ≈ 11.0 km/s)
+      Escape da Terra de h = 0 (superfície; v_e ≈ 11.2 km/s)
+      Escape do Sol a partir da órbita terrestre (v_e ≈ 42.1 km/s)
+  - Verifica que e_dos_raios não é aplicável (ra → ∞)
+
+--------------------------------------------------------------------------------
+5. hiperbole.jl — Cônica: Hipérbole (e > 1)
+--------------------------------------------------------------------------------
+
+FÍSICA
+  A hipérbole ocorre para ε > 0 (v > v_e). O corpo passa pelo pericentro e
+  escapa pelo infinito com velocidade remanescente v_∞.
+    • a = −μ/(2ε) < 0 por convenção (|a| = semi-eixo transverso)
+    • p = |a|·(e²−1) > 0
+    • ν ∈ (−ν_∞, ν_∞),  ν_∞ = arccos(−1/e)  (ângulo da assíntota)
+    • v_∞ = √(μ/|a|) = √(2ε)  (excesso hiperbólico de velocidade)
+    • δ = 2·arcsin(1/e)  (ângulo de deflexão — relevante para flyby)
+
+LÓGICA
+  - Adapta Vis-Viva para a < 0: v = √(μ·(2/r + 1/|a|))
+  - Exemplos:
+      Hipérbole fraca  — v₀ = 1.05·v_e (e próximo de 1)
+      Hipérbole típica — v₀ = 1.20·v_e
+      Flyby pela Terra — v_∞ = 3 km/s especificada; calcula rp mínimo e δ
+  - Calcula ângulo de deflexão e compara com valor analítico
+
+================================================================================
+  OBSERVAÇÕES
+================================================================================
+
+UNIDADES
+  Todos os scripts usam SI (m, m/s, s) internamente.
+  As impressões convertem para km e min quando conveniente.
+
+EXECUÇÃO
+  Cada script é independente e não gera arquivos de saída (apenas terminal):
+    julia julia/scripts/orbital_elements/<nome>.jl
+================================================================================

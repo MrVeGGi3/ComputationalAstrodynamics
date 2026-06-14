@@ -1,0 +1,99 @@
+================================================================================
+  SCRIPTS DO PROBLEMA DE TRÊS CORPOS — DESCRIÇÃO E LÓGICA
+================================================================================
+
+Este diretório contém scripts para o Problema Restrito Circular de Três Corpos
+(CR3BP). As saídas gráficas são salvas em julia/data/output/three_body/.
+
+--------------------------------------------------------------------------------
+1. cr3bp.jl — Problema Restrito Circular de 3 Corpos (CR3BP) — Terra-Lua
+--------------------------------------------------------------------------------
+
+FUNDAMENTOS DO CR3BP
+  O CR3BP modela o movimento de uma partícula de massa desprezível (satélite)
+  sob a atração gravitacional de dois corpos primários (P₁ e P₂) que orbitam
+  seu baricentro em órbitas circulares com velocidade angular constante.
+
+  No frame SINÓDICO (co-rotante com os primários), as equações de movimento são:
+    ẍ − 2ẏ = ∂Ω*/∂x
+    ÿ + 2ẋ = ∂Ω*/∂y
+    z̈     = ∂Ω*/∂z
+
+  onde Ω* = (x²+y²)/2 + (1−μ₃)/r₁ + μ₃/r₂  é o pseudo-potencial (inclui
+  a força centrífuga) e μ₃ = m_Lua/(m_Terra+m_Lua) ≈ 0.01215 é o parâmetro
+  de massa reduzida.
+
+  Os termos −2ẏ e +2ẋ são a aceleração de Coriolis (frame rotante).
+
+UNIDADES ADIMENSIONAIS (sistema canônico)
+  DU = distância Terra-Lua ≈ 384 400 km   (unidade de comprimento)
+  TU = período orbital Lua / (2π) ≈ 375 190 s  (unidade de tempo)
+  MU = m_Terra + m_Lua  (unidade de massa)
+
+  Posições dos primários no frame sinódico:
+    Terra em x = −μ₃,  y = 0
+    Lua   em x = 1−μ₃, y = 0
+
+INTEGRAL DE JACOBI (única integral de movimento conservada)
+  C_J = 2Ω* − v²
+
+  Diferente do problema de dois corpos, o CR3BP não conserva energia, momento
+  angular ou vetor LRL separadamente. A constante de Jacobi C_J é a única
+  quantidade conservada. Ela delimita as regiões do espaço onde o satélite
+  pode estar (Curvas de Velocidade Zero — ZVC).
+
+ANÁLISE IMPLEMENTADA
+
+  1. Localização dos 5 Pontos de Lagrange (L1–L5)
+     L1, L2, L3 — colineares com P₁ e P₂ (eixo x); localizados por busca
+                   de raízes da equação quintica do potencial efetivo
+     L4, L5     — vértices dos triângulos equiláteros com P₁ e P₂;
+                   posições analíticas exatas: (0.5−μ₃, ±√3/2)
+     O módulo lagrange_points(sys) retorna todos os 5 pontos.
+
+  2. Curvas de Velocidade Zero (Zero Velocity Curves — ZVC)
+     Regiões onde v² = 2Ω* − C_J = 0: o satélite não pode cruzá-las com
+     a constante de Jacobi dada. Geradas para C_J ligeiramente acima dos
+     valores em L1, L2 e L3, mostrando como as regiões acessíveis se expandem
+     progressivamente à medida que C_J diminui.
+
+  3. Propagação de Trajetória a partir de L1 (com perturbação)
+     L1 é um ponto de equilíbrio instável. Uma pequena perturbação (δ=0.008 DU,
+     ẏ₀=0.20 TU⁻¹) lança o satélite em uma trajetória quase-periódica ao redor
+     de L1. O integrador usado é propagate_cr3bp (RKF adaptativo com rtol=1e-12).
+     Duração: 3 TU orbitais (≈ 3 períodos do sistema Terra-Lua).
+
+  4. Conservação da Constante de Jacobi
+     Após cada passo de integração, C_J é recalculada e o erro máximo é
+     reportado. Serve como verificação da qualidade numérica da solução.
+     Erro típico < 1e-8 para as tolerâncias usadas.
+
+  5. Análise de Estabilidade em L4/L5
+     L4 e L5 são pontos de equilíbrio estáveis (quando μ₃ < 0.0385 — condição
+     de Routh, satisfeita para Terra-Lua). Perturbações pequenas resultam em
+     movimento troiano em torno do equilíbrio.
+     O script verifica a condição de Routh e propaga uma perturbação em L4
+     para confirmar a estabilidade observacional.
+
+FIGURAS GERADAS (salvas em julia/data/output/three_body/)
+  cr3bp_fig1_zvc.png       — curvas de velocidade zero + primários + L1–L5
+  cr3bp_fig2_trajetoria.png — trajetória propagada em L1 no frame sinódico
+  cr3bp_fig3_jacobi.png    — conservação de C_J ao longo da integração
+  cr3bp_fig4_estabilidade.png — trajetória troiana ao redor de L4/L5
+
+================================================================================
+  OBSERVAÇÕES
+================================================================================
+
+SISTEMA CONFIGURÁVEL
+  O script usa sys = EARTH_MOON. Outros sistemas pré-definidos no módulo
+  (ex: SUN_EARTH, SUN_JUPITER) podem ser substituídos diretamente.
+
+EXECUÇÃO
+    julia julia/scripts/three_body/cr3bp.jl
+
+REFERÊNCIAS NUMÉRICAS
+  μ₃ Terra-Lua ≈ 0.01215
+  C_J(L1) ≈ 3.1883   C_J(L2) ≈ 3.1722   C_J(L3) ≈ 3.0121
+  C_J(L4) = C_J(L5)  (máximo do pseudo-potencial no plano)
+================================================================================

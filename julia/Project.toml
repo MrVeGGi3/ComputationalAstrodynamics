@@ -5,6 +5,8 @@ authors = ["Astronomer"]
 
 [deps]
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 OrdinaryDiffEqSymplecticRK = "fa646aed-7ef9-47eb-84c4-9443fc8cbfa8"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
@@ -14,6 +16,8 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 DifferentialEquations = "8.0.0"
+FileIO = "1.19.0"
+ImageIO = "0.6.9"
 LinearAlgebra = "1.12.0"
 Plots = "1.41.6"
 Printf = "1.11.0"

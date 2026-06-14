@@ -1,0 +1,217 @@
+================================================================================
+  SCRIPTS DE PERTURBAÇÕES ORBITAIS — DESCRIÇÃO E LÓGICA
+================================================================================
+
+Cada script neste diretório analisa uma ou mais perturbações sobre a órbita
+kepleriana pura. Todos usam o integrador RKF4(5) (propagate_rkf45) do módulo
+ComputationalAstrodynamics, exceto cowell_geopotential.jl que usa a biblioteca
+DifferentialEquations. As saídas gráficas são salvas em data/output/perturbations/.
+
+--------------------------------------------------------------------------------
+1. j_harmonics.jl — Harmônicas Zonais (J2, J3, J4, J6)
+--------------------------------------------------------------------------------
+
+FENÔMENO FÍSICO
+  A Terra não é esférica: o achatamento nos polos gera um potencial
+  gravitacional não-central. As harmônicas zonais Jn capturam essa assimetria:
+    J2 (oblateidade)  — efeito dominante; ~1000× maior que J3
+    J3 (assimetria N-S) — causa oscilação em ω e pequena variação em e
+    J4, J6 (achatamentos de ordem superior) — efeitos seculares menores
+
+EFEITOS OBSERVADOS
+  - Precessão secular do RAAN Ω: dΩ/dt = −(3/2) n J2 (R⊕/p)² cos(i)
+  - Precessão secular do arg. perigeu ω: dω/dt = (3/4) n J2 (R⊕/p)² (5cos²i−1)
+  - J3 e J4 introduzem termos periódicos em cima das tendências de J2
+
+LÓGICA DO SCRIPT
+  - Órbita LEO: a=7000 km, e=0.01, i=51.6° (inclinação ISS)
+  - Propaga 4 modelos simultaneamente por ~10 dias (150 órbitas):
+      Kepleriano puro, J2 apenas, J2+J3, J2+J3+J4+J6
+  - Calcula a taxa analítica de precessão por J2 como referência
+  - Compara numericamente a evolução de Ω, ω, a e e para cada modelo
+  - Gera 4 figuras: precessão RAAN, precessão ω, semi-eixo maior, excentricidade
+
+SAÍDAS: jh_fig1_raan.png, jh_fig2_argperigeu.png,
+        jh_fig3_semieixo.png, jh_fig4_excentricidade.png
+
+--------------------------------------------------------------------------------
+2. drag.jl — Arrasto Atmosférico (decaimento orbital em LEO)
+--------------------------------------------------------------------------------
+
+FENÔMENO FÍSICO
+  Em LEO (abaixo de ~700 km), a atmosfera residual exerce força de arrasto
+  contrária ao movimento, dissipando energia e reduzindo o semi-eixo maior.
+  A densidade atmosférica decai exponencialmente com a altitude.
+
+  Aceleração de arrasto: a_drag = −(1/2) ρ(h) (CD·A/m) v_rel |v_rel|
+    ρ(h) — densidade do modelo exponencial em camadas (USSA 1976)
+    CD·A/m — parâmetro aerodinâmico do satélite
+    v_rel — velocidade relativa ao ar (rotação da Terra descontada)
+
+  Coeficiente balístico: B = m/(CD·A)
+    B pequeno → mais arrasto → decaimento mais rápido (ex: CubeSat)
+    B grande  → menos arrasto → satélite mais resistivo (ex: satélite pesado)
+
+LÓGICA DO SCRIPT
+  - Órbita LEO inicial: h=400 km, i=51.6°, e=0.001
+  - Propaga 3 casos com diferentes coeficientes balísticos:
+      B=50  kg/m² (CubeSat) por 30 dias
+      B=200 kg/m² (satélite médio) por 60 dias
+      B=1000 kg/m² (satélite pesado) por 120 dias
+  - Detecta reentrada quando altitude do perigeu < 80 km
+  - J2 é incluído junto ao arrasto em todos os casos
+  - Gera 3 figuras: altitude do perigeu, semi-eixo maior, excentricidade
+
+SAÍDAS: drag_fig1_altitude.png, drag_fig2_semieixo.png, drag_fig3_excentricidade.png
+
+--------------------------------------------------------------------------------
+3. srp.jl — Pressão de Radiação Solar (MEO/GEO)
+--------------------------------------------------------------------------------
+
+FENÔMENO FÍSICO
+  Fótons solares transferem momento ao satélite ao serem absorvidos ou
+  refletidos. A aceleração resultante é proporcional à área/massa e ao
+  coeficiente de reflexão CR:
+
+  a_srp = −P_sol · CR · (A/m) · (r_sat − r_sol)/|r_sat − r_sol|
+
+  onde P_sol ≈ 4.56×10⁻⁶ N/m² é a pressão de radiação solar a 1 UA.
+  A função de sombra cilíndrica zera a aceleração quando o satélite está
+  atrás da Terra.
+
+LÓGICA DO SCRIPT
+  - Órbita MEO (tipo GPS): h=20200 km, i=55°, e=0.001
+  - Propaga 100 órbitas (~14 dias) com 3 configurações:
+      Sem SRP (só J2) — linha de referência
+      SRP com sombra — ciclos de luz/escuro visíveis na energia
+      SRP sem sombra — SRP constante (caso hipotético)
+  - Usa posição solar aproximada via sun_position_approx (eclíptica média)
+  - Gera 2 figuras de comparação + mapa qualitativo da posição solar
+
+SAÍDAS: srp_fig1_energia.png, srp_fig2_excentricidade.png, srp_fig3_posicao_sol.png
+
+--------------------------------------------------------------------------------
+4. third_body.jl — Perturbação de Terceiro Corpo (Lua e Sol)
+--------------------------------------------------------------------------------
+
+FENÔMENO FÍSICO
+  Um corpo massivo distante (Lua ou Sol) perturba a órbita do satélite pela
+  diferença entre a atração direta sobre o satélite e a atração sobre a Terra:
+
+  a₃ = μ₃ · [ (r₃ − r)/|r₃ − r|³ − r₃/|r₃|³ ]
+
+  O segundo termo elimina a aceleração de maré da referência (Terra).
+  Em GEO, a Lua é o agente dominante (maior proximidade relativa).
+  Em MEO, o Sol tem influência comparável à Lua.
+
+LÓGICA DO SCRIPT
+  Dois casos de longo prazo (1 ano cada):
+
+  Caso 1 — GEO + Lua
+    - a=42164 km, i=0.05°, e=0.0002
+    - Passo: 6h, posição lunar calculada a cada passo (modelo analítico)
+    - Observável: acúmulo gradual de inclinação de ~1°/ano se não mantida
+
+  Caso 2 — MEO/GPS + Sol
+    - a=26560 km, i=55°, e=0.001
+    - Passo: 3h, posição solar via sun_position_approx
+    - Observável: oscilação de longo período em excentricidade e inclinação
+
+  Ambos comparam o modelo base (J2 apenas) contra o modelo com terceiro corpo.
+
+SAÍDAS: tb_fig1_geo_inclinacao.png, tb_fig2_geo_excentricidade.png,
+        tb_fig3_gps_inclinacao.png, tb_fig4_gps_excentricidade.png
+
+--------------------------------------------------------------------------------
+5. combined.jl — Perturbações Combinadas (cenários realistas LEO e GEO)
+--------------------------------------------------------------------------------
+
+FENÔMENO FÍSICO
+  Em missões reais, múltiplas perturbações atuam simultaneamente. Este script
+  combina forças para construir dois cenários operacionais representativos.
+
+LÓGICA DO SCRIPT
+
+  Caso 1 — LEO realista (30 dias)
+    Forças: J2+J3+J4 + arrasto atmosférico
+    Órbita: h=450 km, i=51.6°, B≈150 kg/m²
+    Objetivo: separar visualmente o efeito do arrasto (decaimento de altitude)
+    dos efeitos de J3/J4 (oscilações angulares sobre a precessão de J2)
+    Gera: altitude do perigeu, semi-eixo maior, precessão RAAN
+
+  Caso 2 — GEO realista (180 dias)
+    Forças: J2+J3+J4 + SRP (CR=1.8, A/m=0.025 m²/kg) + Lua
+    Órbita: a=42164 km, i=0.1°, e=0.0001
+    Objetivo: mostrar o acúmulo de inclinação por terceiro corpo lunar e a
+    oscilação de excentricidade induzida por SRP em escala semestral
+    Gera: evolução da inclinação
+
+  O integrador RKF4(5) é usado com tolerâncias rtol=1e-10, atol=1.0 m.
+
+SAÍDAS: comb_fig1_leo_altitude.png, comb_fig2_leo_semieixo.png,
+        comb_fig3_leo_raan.png, comb_fig4_geo_inclinacao.png
+
+--------------------------------------------------------------------------------
+6. cowell_geopotential.jl — Método de Cowell com Geopotencial J2+J3+J4
+--------------------------------------------------------------------------------
+
+FENÔMENO FÍSICO
+  Mesmo fenômeno de j_harmonics.jl, mas com foco no método numérico de
+  integração e na escolha do integrador.
+
+MÉTODO DE COWELL
+  Integra as equações de movimento em coordenadas cartesianas ECI sem
+  transformação para elementos orbitais:
+    r̈ = a_geo(r) + a_J2(r) + a_J3(r) + a_J4(r)
+
+  Alternativas clássicas (Encke, Variação de Parâmetros) não são usadas aqui.
+  Cowell é simples de implementar e robusto para forças não-conservativas.
+
+INTEGRADORES DISPONÍVEIS (selecionável via USE_SYMPLECTIC)
+
+  Vern7 (padrão, USE_SYMPLECTIC=false)
+    Runge-Kutta de Verner, 7ª ordem, passo adaptativo.
+    Usa ODEProblem com estado 6D [r; v].
+    Alta precisão; passo se ajusta automaticamente às forças.
+    Tolerâncias: reltol=1e-11, abstol=1e-4.
+
+  Yoshida6 (USE_SYMPLECTIC=true)
+    Integrador simplético de composição, 6ª ordem, passo fixo (Yoshida 1990).
+    Usa SecondOrderODEProblem separando r̈ = f(r) — válido pois o
+    geopotencial Jn é puramente posicional (H = T(v) + V(r)).
+    Não dissipa energia artificialmente por construção; passo fixo ~18 s.
+
+LÓGICA DO SCRIPT
+  - Órbita LEO: a=6800 km, e=0.001, i=28° (lançamento de Canaveral)
+  - Propaga 100 órbitas (~7 dias)
+  - Calcula taxa analítica J2 para RAAN e ω como referência
+  - Extrai elementos orbitais em cada passo via cartesian_to_keplerian
+  - Gera 3 figuras:
+      Fig 1 — trajetória 3D com wireframe da Terra
+      Fig 2 — painel 2×3 com todos os elementos orbitais + ref. analítica J2
+      Fig 3 — energia orbital e erro relativo de energia (teste de qualidade)
+
+SAÍDAS (prefixo depende do integrador):
+  cw_vern7_fig1_orbita3d.png, cw_vern7_fig2_elementos.png, cw_vern7_fig3_energia.png
+  cw_yoshida6_fig1_orbita3d.png, cw_yoshida6_fig2_elementos.png, cw_yoshida6_fig3_energia.png
+
+================================================================================
+  OBSERVAÇÕES GERAIS
+================================================================================
+
+SINAL DOS HARMÔNICOS Jn
+  Os fatores fac_j2/j3/j4/j6 em perturbations.jl devem ter sinal negativo
+  para J2/J3 e positivo para J4/J6, derivado do gradiente do potencial:
+    U = (μ/r)[1 − Σ Jn (R⊕/r)ⁿ Pn(sin φ)]
+  A aceleração é a = ∇U, e o sinal errado inverte a direção da precessão de Ω.
+
+INTEGRADOR BASE (RKF45)
+  Os scripts 1–5 usam propagate_rkf45, implementado internamente no módulo.
+  O script 6 usa DifferentialEquations.jl para acesso a integradores
+  de maior ordem e integradores simpléticos.
+
+REPRODUÇÃO
+  Todos os scripts podem ser executados independentemente a partir da raiz
+  do projeto:
+    julia julia/scripts/perturbations/<nome_do_script>.jl
+================================================================================
