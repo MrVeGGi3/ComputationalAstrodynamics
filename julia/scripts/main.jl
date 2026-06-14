@@ -14,9 +14,9 @@ gr()
 const EARTH_TEXTURE = joinpath(@__DIR__, "..", "textures", "earth_albedo.jpg")
 
 const start_elements = KeplerianElements(
-    26_562_000.0,          # a [m]
+    26562_000.0,          # a [m]
     0.74,              # e
-    deg2rad(63.435),        # i
+    deg2rad(63.345),        # i
     deg2rad(0.0),       # Ω
     deg2rad(270.0),        # ω
     deg2rad(0.0),        # ν
@@ -89,8 +89,57 @@ function build_ground_track_plot(titulo, lats, lons)
     return plt
 end
 
-# ── Simulação + geração de um ground track ────────────────────────────────────
-function generate_ground_track(usar_geopotencial::Bool)
+# ── Plot comparativo: duas trajetórias sobrepostas no mesmo mapa ───────────────
+# Desenha o ground track ideal e o perturbado por J2 juntos, para evidenciar o
+# efeito acumulado (precessão de Ω e ω) ao longo de muitas órbitas.
+function build_comparison_plot(titulo, lats_ideal, lons_ideal, lats_j2, lons_j2)
+    function add_track!(plt, lats, lons, cor, rotulo, lon2px, lat2py)
+        legenda_impressa = false
+        for k in 2:length(lats)
+            if abs(lons[k] - lons[k-1]) < 180.0
+                legenda = !legenda_impressa ? rotulo : ""
+                plot!(plt, lon2px.([lons[k-1], lons[k]]), lat2py.([lats[k-1], lats[k]]),
+                      color=cor, linewidth=2, label=legenda)
+                legenda_impressa = true
+            end
+        end
+    end
+
+    if !isfile(EARTH_TEXTURE)
+        @warn "Textura não encontrada em $EARTH_TEXTURE — gerando comparação sem mapa de fundo."
+        plt = plot(title=titulo, xlabel="Longitude (Graus)", ylabel="Latitude (Graus)",
+                   xlims=(-180, 180), ylims=(-90, 90),
+                   xticks=-180:30:180, yticks=-90:30:90,
+                   grid=true, legend=:bottom, size=(900, 550))
+        id(x) = x
+        add_track!(plt, lats_ideal, lons_ideal, :blue, "Órbita Ideal", id, id)
+        add_track!(plt, lats_j2, lons_j2, :red, "Com J2", id, id)
+        return plt
+    end
+
+    img = load(EARTH_TEXTURE)
+    H, W = size(img, 1), size(img, 2)
+    lon2px(lon) = (lon + 180.0) / 360.0 * W
+    lat2py(lat) = (90.0 - lat) / 180.0 * H
+
+    plt = plot(img, title=titulo, size=(900, 550), legend=:bottom,
+               framestyle=:box, grid=false)
+
+    xt = collect(-180:30:180)
+    yt = collect(-90:30:90)
+    plot!(plt, xlabel="Longitude (°)", ylabel="Latitude (°)",
+          xticks=(lon2px.(xt), string.(xt)),
+          yticks=(lat2py.(yt), string.(yt)))
+
+    add_track!(plt, lats_ideal, lons_ideal, :cyan, "Órbita Ideal", lon2px, lat2py)
+    add_track!(plt, lats_j2, lons_j2, :red, "Com J2", lon2px, lat2py)
+    return plt
+end
+
+# ── Cálculo de um ground track ────────────────────────────────────────────────
+# Propaga a órbita por `n_orbitas` períodos e devolve (lats, lons) em graus.
+# `verbose=true` imprime os parâmetros iniciais e o estado a cada passo.
+function compute_ground_track(usar_geopotencial::Bool, n_orbitas::Real; t_add=60.0, verbose=true, apenas_ultima_orbita=false)
     a = start_elements.a
     e = start_elements.e
     i = start_elements.i
@@ -98,7 +147,6 @@ function generate_ground_track(usar_geopotencial::Bool)
     ω0 = start_elements.ω
     ν0 = start_elements.ν
 
-    t_add = 60.0
     T_orb = 2 * π * sqrt(a^3 / μ_EARTH)
 
     dΩ_dt = 0.0
@@ -112,9 +160,9 @@ function generate_ground_track(usar_geopotencial::Bool)
 
         dΩ_dt = -prec * cos(i)
         dω_dt = prec * (2.0 - (5.0 / 2.0) * sin(i)^2)
-        println("Configuração: Geopotencial Terrestre (J2) ATIVADO.")
+        verbose && println("Configuração: Geopotencial Terrestre (J2) ATIVADO.")
     else
-        println("Configuração: Geopotencial Terrestre (J2) DESATIVADO. Órbita Ideal.")
+        verbose && println("Configuração: Geopotencial Terrestre (J2) DESATIVADO. Órbita Ideal.")
     end
 
     rp = a * (1.0 - e)
@@ -125,18 +173,21 @@ function generate_ground_track(usar_geopotencial::Bool)
     M0 = E0 - e * sin(E0)
     t0 = (M0 * T_orb) / (2.0 * π)
 
-    time_range = 0.0:t_add:3*T_orb
+    time_range = 0.0:t_add:n_orbitas*T_orb
 
-    println("\n========== ELEMENTOS ORBITAIS E PARÂMETROS INICIAIS ==========")
-    @printf("  Semieixo maior         a    = %.3f m  (%.3f km)\n", a, a/1e3)
-    @printf("  Excentricidade         e    = %.6f\n", e)
-    @printf("  Momento ang. específico h   = %.6e m²/s\n", h)
-    @printf("  Período orbital        T    = %.3f s  (%.4f min)\n", T_orb, T_orb/60)
-    @printf("  Precessão nodal       dΩ/dt = %.6e rad/s  (%.6f °/dia)\n", dΩ_dt, rad2deg(dΩ_dt)*86400)
-    @printf("  Precessão periastro   dω/dt = %.6e rad/s  (%.6f °/dia)\n", dω_dt, rad2deg(dω_dt)*86400)
-    @printf("  Anomalia excêntrica ini. E0 = %.6f rad  (%.4f °)\n", E0, rad2deg(E0))
-    @printf("  Tempo inicial (antes perigeu) t0 = %.3f s\n", t0)
-    println("===============================================================\n")
+    if verbose
+        println("\n========== ELEMENTOS ORBITAIS E PARÂMETROS INICIAIS ==========")
+        @printf("  Semieixo maior         a    = %.3f m  (%.3f km)\n", a, a/1e3)
+        @printf("  Excentricidade         e    = %.6f\n", e)
+        @printf("  Momento ang. específico h   = %.6e m²/s\n", h)
+        @printf("  Período orbital        T    = %.3f s  (%.4f min)\n", T_orb, T_orb/60)
+        @printf("  Número de órbitas      N    = %.1f\n", n_orbitas)
+        @printf("  Precessão nodal       dΩ/dt = %.6e rad/s  (%.6f °/dia)\n", dΩ_dt, rad2deg(dΩ_dt)*86400)
+        @printf("  Precessão periastro   dω/dt = %.6e rad/s  (%.6f °/dia)\n", dω_dt, rad2deg(dω_dt)*86400)
+        @printf("  Anomalia excêntrica ini. E0 = %.6f rad  (%.4f °)\n", E0, rad2deg(E0))
+        @printf("  Tempo inicial (antes perigeu) t0 = %.3f s\n", t0)
+        println("===============================================================\n")
+    end
 
     n_steps = length(time_range)
     lats = zeros(n_steps)
@@ -167,19 +218,37 @@ function generate_ground_track(usar_geopotencial::Bool)
         lats[k] = rad2deg(declination)
         lons[k] = rad2deg(r_asc)
 
-        println("---------- Passo k=$k  (t_sim = $(t_sim) s) ----------")
-        @printf("  Tempo desde perigeu    t_abs = %.3f s\n", t_absoluto)
-        @printf("  Anomalia média            M  = %.6f rad  (%.4f °)\n", Mf, rad2deg(Mf))
-        @printf("  Anomalia excêntrica       E  = %.6f rad  (%.4f °)\n", Ef, rad2deg(Ef))
-        @printf("  Anomalia verdadeira       ν  = %.6f rad  (%.4f °)\n", νf, rad2deg(νf))
-        @printf("  Arg. periastro perturbado ω  = %.6f rad  (%.4f °)\n", ω_perturbed, rad2deg(ω_perturbed))
-        @printf("  RAAN perturbada           Ω  = %.6f rad  (%.4f °)\n", Ω_perturbed, rad2deg(Ω_perturbed))
-        @printf("  Pos. inercial (ECI)    r_ECI = [%.3f, %.3f, %.3f] m\n", r_new[1], r_new[2], r_new[3])
-        @printf("  Ângulo aux. (rot. Terra) θ⊕  = %.6f rad  (%.4f °)\n", ν_earth, rad2deg(ν_earth))
-        @printf("  Pos. perturbada (ECEF) r_ECF = [%.3f, %.3f, %.3f] m\n", last_r[1], last_r[2], last_r[3])
-        @printf("  Ascensão reta (long.)    α   = %.6f rad  (%.4f °)\n", r_asc, rad2deg(r_asc))
-        @printf("  Declinação (lat.)        δ   = %.6f rad  (%.4f °)\n", declination, rad2deg(declination))
+        if verbose
+            println("---------- Passo k=$k  (t_sim = $(t_sim) s) ----------")
+            @printf("  Tempo desde perigeu    t_abs = %.3f s\n", t_absoluto)
+            @printf("  Anomalia média            M  = %.6f rad  (%.4f °)\n", Mf, rad2deg(Mf))
+            @printf("  Anomalia excêntrica       E  = %.6f rad  (%.4f °)\n", Ef, rad2deg(Ef))
+            @printf("  Anomalia verdadeira       ν  = %.6f rad  (%.4f °)\n", νf, rad2deg(νf))
+            @printf("  Arg. periastro perturbado ω  = %.6f rad  (%.4f °)\n", ω_perturbed, rad2deg(ω_perturbed))
+            @printf("  RAAN perturbada           Ω  = %.6f rad  (%.4f °)\n", Ω_perturbed, rad2deg(Ω_perturbed))
+            @printf("  Pos. inercial (ECI)    r_ECI = [%.3f, %.3f, %.3f] m\n", r_new[1], r_new[2], r_new[3])
+            @printf("  Ângulo aux. (rot. Terra) θ⊕  = %.6f rad  (%.4f °)\n", ν_earth, rad2deg(ν_earth))
+            @printf("  Pos. perturbada (ECEF) r_ECF = [%.3f, %.3f, %.3f] m\n", last_r[1], last_r[2], last_r[3])
+            @printf("  Ascensão reta (long.)    α   = %.6f rad  (%.4f °)\n", r_asc, rad2deg(r_asc))
+            @printf("  Declinação (lat.)        δ   = %.6f rad  (%.4f °)\n", declination, rad2deg(declination))
+        end
     end
+
+    if apenas_ultima_orbita
+        # Mantém só os passos da volta final: a precessão de Ω e ω já está
+        # acumulada por (n_orbitas-1) períodos, então a trilha desenhada
+        # mostra o deslocamento total em relação à órbita ideal.
+        t_ini_ultima = max(0.0, (n_orbitas - 1) * T_orb)
+        idx = findall(t -> t >= t_ini_ultima, time_range)
+        return lats[idx], lons[idx]
+    end
+
+    return lats, lons
+end
+
+# ── Simulação + geração de um ground track ────────────────────────────────────
+function generate_ground_track(usar_geopotencial::Bool)
+    lats, lons = compute_ground_track(usar_geopotencial, 3; verbose=true)
 
     titulo_grafico = usar_geopotencial ? "Ground Track (Com Geopotencial J2)" : "Ground Track (Órbita Ideal)"
     plt = build_ground_track_plot(titulo_grafico, lats, lons)
@@ -189,5 +258,21 @@ function generate_ground_track(usar_geopotencial::Bool)
     println("Simulação finalizada. Imagem '$nome_arquivo' gerada!")
 end
 
+# ── Comparação do efeito acumulado ao longo de muitas órbitas ──────────────────
+function generate_comparison_ground_track(n_orbitas::Real)
+    println("\n########## COMPARAÇÃO IDEAL vs J2 — ÚLTIMA ÓRBITA APÓS $(n_orbitas) ##########")
+    lats_ideal, lons_ideal = compute_ground_track(false, n_orbitas; verbose=false, apenas_ultima_orbita=true)
+    lats_j2, lons_j2       = compute_ground_track(true,  n_orbitas; verbose=false, apenas_ultima_orbita=true)
+
+    titulo = "Efeito Acumulado J2 — Última Órbita (após $(Int(n_orbitas)) períodos)"
+    plt = build_comparison_plot(titulo, lats_ideal, lons_ideal, lats_j2, lons_j2)
+
+    nome_arquivo = "ground_track_comparison_$(Int(n_orbitas))orbits.png"
+    savefig(plt, nome_arquivo)
+    println("Comparação finalizada. Imagem '$nome_arquivo' gerada!")
+end
+
 generate_ground_track(false)   # ground_track_ideal.png
 generate_ground_track(true)    # ground_track_j2.png
+
+generate_comparison_ground_track(100)   # ground_track_comparison_100orbits.png
