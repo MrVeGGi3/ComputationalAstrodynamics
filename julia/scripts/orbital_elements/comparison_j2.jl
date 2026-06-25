@@ -21,12 +21,12 @@ gr()
 # ─── Condições iniciais (idênticas ao main.jl) ──────────────────────────────
 
 el0 = KeplerianElements(
-    26_562_000.0,          # a [m]   
-    0.74,              # e
-    deg2rad(63.435),        # i       
-    deg2rad(0.0),       # Ω
-    deg2rad(270.0),        # ω
-    deg2rad(0.0),        # ν
+    7130_000.0,          # a [m]
+    0.0002789,              # e
+    deg2rad(98.43),        # i
+    deg2rad(238.4859),       # Ω
+    deg2rad(182.0267),        # ω
+    deg2rad(178.0925),        # ν
 )
 s0 = keplerian_to_cartesian(el0)
 
