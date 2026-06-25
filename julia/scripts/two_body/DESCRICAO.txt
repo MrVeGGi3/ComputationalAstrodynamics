@@ -1,0 +1,160 @@
+================================================================================
+  SCRIPTS DO PROBLEMA DE DOIS CORPOS — DESCRIÇÃO E LÓGICA
+================================================================================
+
+Este diretório contém scripts para o problema gravitacional de dois corpos:
+integração numérica com RKF4(5), análise de integrais de movimento, varredura
+de trajetórias em função da velocidade inicial, e estudo de sensibilidade a
+condições iniciais. As saídas gráficas são salvas em julia/data/output/.
+
+O integrador RKF4(5) (Runge-Kutta-Fehlberg 4ª/5ª ordem) é implementado no
+módulo ComputationalAstrodynamics e controla o passo adaptativo por comparação
+entre as estimativas de 4ª e 5ª ordem.
+
+--------------------------------------------------------------------------------
+1. rkf45.jl — Integração RKF4(5) e Análise Gráfica Completa
+--------------------------------------------------------------------------------
+
+OBJETIVO
+  Script central do problema de dois corpos. Propaga o estado orbital e gera
+  um conjunto completo de figuras de análise.
+
+TRÊS MODOS DE ENTRADA
+  :cartesian
+    Vetores r⃗₀ e v⃗₀ do corpo 2 no referencial ECI (corpo 1 na origem).
+    Uso direto: μ = G·m₁ (m₂ desprezível).
+
+  :keplerian
+    Elementos orbitais clássicos (a, e, i, Ω, ω, ν).
+    Converte para cartesiano internamente antes de integrar.
+
+  :two_body_inertial
+    Posição e velocidade de AMBOS os corpos no referencial inercial.
+    Reduz ao problema relativo: r⃗_rel = r⃗₂ − r⃗₁, μ = G·(m₁+m₂).
+    Permite simular sistemas com massas comparáveis (ex: estrelas binárias).
+
+DICIONÁRIO DE CORPOS
+  Terra, Sol, Lua, Marte, Júpiter, Saturno — com massa e raio.
+  Qualquer par pode ser combinado simplesmente alterando as chaves.
+
+FIGURAS GERADAS (salvas em julia/data/output/)
+  fig1_orbita3d.png         — trajetória 3D (ambos os corpos em modo inercial)
+  fig2_cinematica.png       — componentes r(t) e v(t) do movimento relativo
+  fig3_conservacao.png      — desvio de energia e momento angular; passo Δt(t)
+  fig4_posicoes.png         — r⃗₁(t) e r⃗₂(t) em î, ĵ, k̂
+  fig5_velocidades.png      — v⃗₁(t) e v⃗₂(t) em î, ĵ, k̂
+  fig6_inercial.png         — trajetória XY e componentes de momento linear
+  fig7_relativo_p1.png      — trajetória de P₂ e do baricentro relativa a P₁
+  fig8_relativo_baricentro.png — posições de P₁ e P₂ relativas ao CM
+  fig9_cm_comparacao.png    — trajetórias de m₁, m₂ e CM + distâncias ao CM
+
+--------------------------------------------------------------------------------
+2. integrals_motion.jl — Integrais de Movimento do Problema de Dois Corpos
+--------------------------------------------------------------------------------
+
+OBJETIVO
+  Verificar numericamente a conservação das três integrais de movimento do
+  problema kepleriano e quantificar o erro acumulado pelo integrador RKF4(5).
+
+INTEGRAIS ANALISADAS
+  ε(t) — energia específica orbital: ε = v²/2 − μ/r
+    Deve ser constante para todos os tipos de cônica.
+
+  h⃗(t) — vetor momento angular específico: h⃗ = r⃗ × v⃗
+    Constante de módulo e direção (define o plano orbital).
+
+  B⃗(t) — vetor de Laplace-Runge-Lenz (LRL): B⃗ = v⃗ × h⃗ − μ·r̂
+    Aponta permanentemente do foco para o perigeu.
+    Módulo: ‖B⃗‖ = μ·e (proporcional à excentricidade).
+
+NORMAS DE ERRO (Eq. 3.1)
+  O script usa duas normas para quantificar o desvio vetorial ao longo do tempo:
+    ‖x̃‖∞ = max(|xᵢ|)   — sensível ao componente de maior desvio
+    ‖x̃‖₂ = √(Σ|xᵢ|²)  — norma euclidiana
+
+LÓGICA
+  - Mesma estrutura de corpos e integrador do rkf45.jl
+  - Calcula as três integrais no instante t=0
+  - A cada passo de propagação, recalcula e armazena o desvio absoluto
+  - Gera figura única com os três painéis de desvio ao longo do tempo
+
+--------------------------------------------------------------------------------
+3. analise_v0.jl — Excentricidade e Trajetórias em Função de v₀
+--------------------------------------------------------------------------------
+
+OBJETIVO
+  Varrer a velocidade inicial v₀ do corpo P₂ e mapear como a geometria da
+  trajetória (e tipo de cônica) muda continuamente com v₀.
+
+CONFIGURAÇÃO FIXA
+  m₁ = 10²⁶ kg,  m₂ = 0.1·m₁
+  r⃗₁(0) = 0⃗,  v⃗₁(0) = (10, 20, 30) km/s  (P₁ em movimento)
+  r⃗₂(0) = 3000 î km,  v⃗₂(0) = v₀ ĵ km/s
+
+  No referencial relativo:
+    r⃗(0) = (3000, 0, 0) km
+    v⃗(0) = (−10, v₀−20, −30) km/s
+    μ = G·(m₁+m₂)
+
+VARREDURA
+  - v₀ varia em uma faixa que cobre os três regimes (elipse, parábola, hipérbole)
+  - Para cada v₀, integra a trajetória e extrai: e, tipo de cônica, período (se
+    ligada), energia específica
+  - Identifica automaticamente o v₀ de escape (ε = 0)
+
+FIGURAS GERADAS
+  p4_fig1_excentricidade.png   — e vs. v₀ (com marcação dos regimes)
+  p4_fig2_trajetorias_3d.png   — trajetórias 3D sobrepostas de P₂ relativo a P₁
+  p4_fig3_trajetorias_proj.png — projeções 2D (planos x-y, x-z, y-z)
+  p4_fig4_integrais.png        — desvio das integrais de movimento por caso
+
+--------------------------------------------------------------------------------
+4. sensibilidade.jl — Sensibilidade a Pequenas Variações das Condições Iniciais
+--------------------------------------------------------------------------------
+
+OBJETIVO
+  Demonstrar a sensibilidade estrutural do problema na vizinhança da trajetória
+  parabólica (ε = 0), que atua como separatriz no espaço de fases.
+
+TEORIA
+  A parábola é a fronteira entre órbitas ligadas (ε < 0) e abertas (ε > 0).
+  Uma perturbação infinitesimal δv₀ muda qualitativamente o tipo de trajetória:
+    δv₀ < 0  →  ε < 0  →  elipse  (T → ∞ quando δv₀ → 0⁻)
+    δv₀ = 0  →  ε = 0  →  parábola (separatriz)
+    δv₀ > 0  →  ε > 0  →  hipérbole
+
+  O período diverge como T ∝ |δv₀|^(−3/2) — sensibilidade algébrica, não
+  caótica, mas notável: perturbações da ordem de 0.1% mudam T por ordens de
+  grandeza.
+
+  A hipérbole, em contraste, é estruturalmente estável: perturbações em torno
+  de v₀_hyp mantêm a trajetória aberta; apenas e e a assíntota variam
+  suavemente. Somente Δv₀ ≈ −(v₀_hyp − v₀_par) pode mudar o regime.
+
+LÓGICA
+  - Mesma configuração de massas e CI do analise_v0.jl
+  - Dois centros de perturbação:
+      v₀_par  — valor que produz ε = 0 (determinado numericamente)
+      v₀_hyp  — valor representativo de hipérbole bem estabelecida
+  - Para cada centro, aplica δv₀ ∈ {−5%, −1%, −0.1%, 0, +0.1%, +1%, +5%}
+  - Integra cada trajetória e extrai e, ε, T (ou detecta abertura da órbita)
+
+FIGURAS GERADAS
+  p4s_fig1_par_traj.png   — trajetórias ao redor do caso parabólico
+  p4s_fig2_hyp_traj.png   — trajetórias ao redor do caso hiperbólico
+  p4s_fig3_ecc_sens.png   — ε vs. δv₀ para ambos os casos
+  p4s_fig4_periodo.png    — período T vs. δv₀ (divergência algébrica em δv₀→0⁻)
+
+================================================================================
+  OBSERVAÇÕES
+================================================================================
+
+EXECUÇÃO
+  Todos os scripts podem ser executados independentemente:
+    julia julia/scripts/two_body/<nome>.jl
+
+UNIDADES
+  rkf45.jl e integrals_motion.jl usam SI (m, m/s, s).
+  analise_v0.jl e sensibilidade.jl usam km, kg, s (massas muito grandes
+  tornam G em SI inconveniente numericamente).
+================================================================================

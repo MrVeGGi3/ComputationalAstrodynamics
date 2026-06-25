@@ -197,8 +197,11 @@ rot3(θ) = [cos(θ)   sin(θ)  0]
 """
 function rot3(θ::Float64)
     c, s = cos(θ), sin(θ)
-    # column-major: col1=(c,s,0), col2=(-s,c,0), col3=(0,0,1)
-    SMatrix{3,3,Float64,9}(c, s, 0.0,  -s, c, 0.0,  0.0, 0.0, 1.0)
+    # column-major: col1=(c,-s,0), col2=(s,c,0), col3=(0,0,1)
+    # → matriz [c s 0; -s c 0; 0 0 1] (passiva, consistente com rot1/rot2).
+    # A versão anterior montava a transposta (rotação ativa), o que invertia o
+    # sentido da rotação da Terra em eci_to_ecef e espelhava o ground track L↔O.
+    SMatrix{3,3,Float64,9}(c, -s, 0.0,  s, c, 0.0,  0.0, 0.0, 1.0)
 end
 
 # ── ECEF ↔ ENU (East-North-Up) ───────────────────────────────

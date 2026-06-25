@@ -141,5 +141,6 @@ export kepler_newton_raphson
 export transform_cartesian_vector
 export cosine_matrix, rotation_z_axis_matrix
 export find_declination_and_right_ascention
+export gmst
 
 end # module
